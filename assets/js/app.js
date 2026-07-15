@@ -14,27 +14,32 @@ import {
 import {
   registerRoute,
   startRouter,
-  navigate
+  navigate,
+  getCurrentRoute
 } from './router.js';
 
 import {
-  renderEventsPage
+  loadStore,
+  refreshStore,
+  getStoreSnapshot,
+  getAllEvents,
+  getAllLists,
+  getAllEntries
+} from './store.js';
+
+import {
+  renderOverviewPage
 } from './events.js';
 
 import {
   renderAdminPage
 } from './admin.js';
 
-const state = {
-  frontendData: null,
-  categories: [],
-  loading: false,
-  error: null
-};
-
 const elements = {
-  app: document.getElementById('app'),
-  content: document.getElementById('pageContent'),
+  app:
+    document.getElementById('app'),
+  content:
+    document.getElementById('pageContent'),
   pageTitle:
     document.getElementById('pageTitle'),
   pageDescription:
@@ -60,18 +65,55 @@ async function initialize() {
   bindNavigation();
   registerRoutes();
   startRouter();
-  await loadInitialData();
+
+  setConnection(
+    'checking',
+    'Verbindung wird geprüft'
+  );
+
+  renderInitialLoadingNotice();
+
+  try {
+    await loadStore();
+
+    applyTenantConfiguration();
+
+    setConnection(
+      'online',
+      'Verbunden'
+    );
+
+    await renderCurrentPage();
+
+    refreshInBackground();
+  } catch (error) {
+    setConnection(
+      'offline',
+      'Keine Verbindung'
+    );
+
+    renderError(error);
+  }
 }
 
 function bindNavigation() {
   document
-    .querySelectorAll('[data-route-link]')
+    .querySelectorAll(
+      '[data-route-link]'
+    )
     .forEach(link => {
-      link.addEventListener('click', event => {
-        event.preventDefault();
-        navigate(link.dataset.routeLink);
-        closeMobileNavigation();
-      });
+      link.addEventListener(
+        'click',
+        event => {
+          event.preventDefault();
+
+          navigate(
+            link.dataset.routeLink
+          );
+
+          closeMobileNavigation();
+        }
+      );
     });
 
   elements.mobileMenuButton
@@ -94,143 +136,137 @@ function registerRoutes() {
   );
 
   registerRoute(
-    'events',
-    () => renderEventsPage({
-      contentElement:
-        elements.content,
-      setPageHeading:
-        setPageHeading,
-      settings:
-        state.frontendData &&
-        state.frontendData.einstellungen
-          ? state.frontendData.einstellungen
-          : {},
-      categories:
-        state.categories,
-      refreshFrontendData:
-        refreshFrontendData
-    })
+    'overview',
+    () =>
+      renderOverviewPage({
+        contentElement:
+          elements.content,
+        setPageHeading
+      })
   );
 
   registerRoute(
     'mine',
-    () => renderPlaceholder(
-      'Meine Einsätze',
-      'Die persönliche Übersicht wird in einem späteren Schritt angebunden.'
-    )
+    () =>
+      renderPlaceholder(
+        'Meine Einsätze',
+        'Die persönliche Übersicht wird als nächstes umgesetzt.'
+      )
   );
 
   registerRoute(
     'points',
-    () => renderPlaceholder(
-      'Punkte',
-      'Dieser Bereich erscheint später nur bei aktiviertem Punktesystem.'
-    )
+    () =>
+      renderPlaceholder(
+        'Punkte',
+        'Dieser Bereich erscheint nur bei aktiviertem Punktesystem.'
+      )
   );
 
   registerRoute(
     'archive',
-    () => renderPlaceholder(
-      'Archiv',
-      'Archivierte Veranstaltungen werden hier später durchsucht und angezeigt.'
-    )
+    () =>
+      renderPlaceholder(
+        'Archiv',
+        'Archivierte Veranstaltungen werden hier angezeigt.'
+      )
   );
 
   registerRoute(
     'admin',
-    () => renderAdminPage({
-      contentElement:
-        elements.content,
-      setPageHeading:
-        setPageHeading,
-      categories:
-        state.categories
-    })
+    () =>
+      renderAdminPage({
+        contentElement:
+          elements.content,
+        setPageHeading
+      })
   );
+
 }
 
-async function loadInitialData() {
-  setLoading(true);
-  setConnection(
-    'checking',
-    'Verbindung wird geprüft'
-  );
+async function renderCurrentPage() {
+  const route =
+    getCurrentRoute();
 
+  if (
+    route === 'overview'
+  ) {
+    return renderOverviewPage({
+      contentElement:
+        elements.content,
+      setPageHeading
+    });
+  }
+
+  if (
+    route === 'admin'
+  ) {
+    return renderAdminPage({
+      contentElement:
+        elements.content,
+      setPageHeading
+    });
+  }
+
+  if (
+    route === 'mine'
+  ) {
+    return renderPlaceholder(
+      'Meine Einsätze',
+      'Die persönliche Übersicht wird als nächstes umgesetzt.'
+    );
+  }
+
+  if (
+    route === 'points'
+  ) {
+    return renderPlaceholder(
+      'Punkte',
+      'Dieser Bereich erscheint nur bei aktiviertem Punktesystem.'
+    );
+  }
+
+  if (
+    route === 'archive'
+  ) {
+    return renderPlaceholder(
+      'Archiv',
+      'Archivierte Veranstaltungen werden hier angezeigt.'
+    );
+  }
+
+  return renderDashboard();
+}
+
+async function refreshInBackground() {
   try {
-    const [
-      frontendData,
-      categories
-    ] = await Promise.all([
-      apiGet('frontenddata'),
-      apiGet('categories')
-    ]);
-
-    state.frontendData = frontendData;
-    state.categories = Array.isArray(categories)
-      ? categories
-      : [];
-    state.error = null;
+    await refreshStore();
 
     applyTenantConfiguration();
-    setConnection('online', 'Verbunden');
 
     if (
-      window.location.hash === '#events'
+      getCurrentRoute() ===
+      'dashboard'
     ) {
-      await renderEventsPage({
-        contentElement:
-          elements.content,
-        setPageHeading:
-          setPageHeading,
-        settings:
-          state.frontendData &&
-          state.frontendData.einstellungen
-            ? state.frontendData.einstellungen
-            : {},
-        categories:
-          state.categories,
-        refreshFrontendData:
-          refreshFrontendData
-      });
-    } else if (
-      window.location.hash === '#admin'
-    ) {
-      await renderAdminPage({
-        contentElement:
-          elements.content,
-        setPageHeading:
-          setPageHeading,
-        categories:
-          state.categories
-      });
-    } else {
       renderDashboard();
     }
   } catch (error) {
-    state.error = error;
-    setConnection(
-      'offline',
-      'Keine Verbindung'
+    console.warn(
+      'Hintergrundaktualisierung fehlgeschlagen.',
+      error
     );
-    renderError(error);
-  } finally {
-    setLoading(false);
   }
 }
 
-async function refreshFrontendData() {
-  const frontendData =
-    await apiGet('frontenddata');
-
-  state.frontendData =
-    frontendData;
-
-  applyTenantConfiguration();
-}
-
 function applyTenantConfiguration() {
-  const data = state.frontendData || {};
-  const settings = data.einstellungen || {};
+  const snapshot =
+    getStoreSnapshot();
+
+  const data =
+    snapshot.frontendData || {};
+
+  const settings =
+    data.einstellungen || {};
 
   const tenantName =
     data.einrichtungsname ||
@@ -263,127 +299,176 @@ function applyTenantConfiguration() {
       );
   }
 
-  updatePointsNavigation(settings);
-}
-
-function updatePointsNavigation(settings) {
-  const pointsEnabled =
-    settings.punkteAktiv === true;
-
   document
-    .querySelectorAll('[data-points-only]')
+    .querySelectorAll(
+      '[data-points-only]'
+    )
     .forEach(element => {
-      element.hidden = !pointsEnabled;
+      element.hidden =
+        settings.punkteAktiv !==
+        true;
     });
 }
 
 function renderDashboard() {
+  const snapshot =
+    getStoreSnapshot();
+
+  const data =
+    snapshot.frontendData;
+
   setPageHeading(
     'Dashboard',
     'Alles Wichtige auf einen Blick'
   );
 
-  if (!state.frontendData) {
-    renderLoadingCard();
+  if (!data) {
+    renderInitialLoadingNotice();
     return;
   }
 
-  const data = state.frontendData;
-  const counters = data.anzahl || {};
-  const period = data.vereinsjahr || {};
+  const events =
+    getAllEvents();
+
+  const lists =
+    getAllLists();
+
+  const entries =
+    getAllEntries();
+
+  const nextEvent =
+    events
+      .filter(event =>
+        event.startdatum
+      )
+      .sort(
+        (a, b) =>
+          parseDate(
+            a.startdatum
+          ) -
+          parseDate(
+            b.startdatum
+          )
+      )[0];
 
   elements.content.innerHTML = `
+    <section class="info-banner">
+      <span class="info-banner-icon">i</span>
+      <div>
+        <strong>Daten werden geladen und aktualisiert.</strong>
+        <span>
+          Dies kann beim ersten Öffnen einen kleinen Moment dauern.
+        </span>
+      </div>
+    </section>
+
     <section class="hero-card">
       <div>
-        <span class="eyebrow">Aktuelles Vereinsjahr</span>
-        <h2>${escapeHtml(
-          period.bezeichnung ||
-          period.startText ||
-          'Aktueller Zeitraum'
-        )}</h2>
+        <span class="eyebrow">
+          Aktuelles Vereinsjahr
+        </span>
+
+        <h2>
+          ${escapeHtml(
+            data.vereinsjahr &&
+            (
+              data.vereinsjahr.bezeichnung ||
+              data.vereinsjahr.startText
+            )
+              ? (
+                  data.vereinsjahr.bezeichnung ||
+                  data.vereinsjahr.startText
+                )
+              : 'Aktueller Zeitraum'
+          )}
+        </h2>
+
         <p>
-          Die neue Vereinsplattform ist erfolgreich mit dem Backend verbunden.
+          ${nextEvent
+            ? 'Nächste Veranstaltung: ' +
+              escapeHtml(nextEvent.titel) +
+              ' am ' +
+              escapeHtml(nextEvent.startdatum)
+            : 'Aktuell ist keine kommende Veranstaltung hinterlegt.'}
         </p>
       </div>
+
       <div class="hero-status">
         <span class="status-dot"></span>
         System bereit
       </div>
     </section>
 
-    <section class="metric-grid" aria-label="Kennzahlen">
+    <section class="metric-grid">
       ${metricCard(
         'Veranstaltungen',
-        counters.veranstaltungen ?? 0,
-        'Kalender'
+        events.length,
+        'Aktuell hinterlegt'
       )}
+
       ${metricCard(
-        'Listen und Einsätze',
-        counters.listen ?? 0,
-        'Aufgaben'
+        'Einsätze und Listen',
+        lists.length,
+        'Zugeordnete Aufgaben'
       )}
+
       ${metricCard(
         'Eintragungen',
-        counters.eintragungen ?? 0,
-        'Teilnahmen'
+        entries.length,
+        'Aktuelle Teilnahmen'
       )}
+
       ${metricCard(
         'Kategorien',
-        state.categories.length,
+        snapshot.categories.length,
         'Individuell verwaltbar'
       )}
     </section>
-
-    <section class="content-grid">
-      <article class="panel-card">
-        <div class="panel-heading">
-          <div>
-            <span class="eyebrow">Nächster Schritt</span>
-            <h3>Frontend-Grundlage steht</h3>
-          </div>
-          <span class="badge badge-success">Aktiv</span>
-        </div>
-        <p>
-          Navigation, API-Anbindung, dynamische Mandantenerkennung,
-          Fehlerbehandlung und das responsive Grundlayout sind eingerichtet.
-        </p>
-      </article>
-
-      <article class="panel-card">
-        <div class="panel-heading">
-          <div>
-            <span class="eyebrow">Mandant</span>
-            <h3>${escapeHtml(getTenant())}</h3>
-          </div>
-        </div>
-        <p>
-          Der Mandant wird über die URL bestimmt und ist nicht mehr fest
-          im Anwendungscode verdrahtet.
-        </p>
-      </article>
-    </section>
   `;
 }
 
-function renderPlaceholder(title, description) {
-  setPageHeading(title, description);
+function renderInitialLoadingNotice() {
+  setPageHeading(
+    'Dashboard',
+    'Alles Wichtige auf einen Blick'
+  );
 
   elements.content.innerHTML = `
-    <section class="empty-state">
-      <div class="empty-icon" aria-hidden="true">◌</div>
-      <h2>${escapeHtml(title)}</h2>
-      <p>${escapeHtml(description)}</p>
-      <span class="badge">Modul wird aufgebaut</span>
+    <section class="info-banner">
+      <span class="info-banner-icon">i</span>
+      <div>
+        <strong>Daten werden geladen.</strong>
+        <span>
+          Dies kann einen kleinen Moment dauern.
+        </span>
+      </div>
     </section>
-  `;
-}
 
-function renderLoadingCard() {
-  elements.content.innerHTML = `
     <section class="panel-card">
       <div class="skeleton skeleton-title"></div>
       <div class="skeleton"></div>
       <div class="skeleton skeleton-short"></div>
+    </section>
+  `;
+}
+
+function renderPlaceholder(
+  title,
+  description
+) {
+  setPageHeading(
+    title,
+    description
+  );
+
+  elements.content.innerHTML = `
+    <section class="empty-state">
+      <div class="empty-icon">◌</div>
+      <h2>${escapeHtml(title)}</h2>
+      <p>${escapeHtml(description)}</p>
+      <span class="badge">
+        Modul wird aufgebaut
+      </span>
     </section>
   `;
 }
@@ -395,82 +480,140 @@ function renderError(error) {
   );
 
   elements.content.innerHTML = `
-    <section class="error-card" role="alert">
-      <span class="eyebrow">Technischer Hinweis</span>
-      <h2>Die Daten konnten nicht geladen werden</h2>
-      <p>${escapeHtml(
-        error && error.message
-          ? error.message
-          : 'Unbekannter Fehler'
-      )}</p>
-      <button class="button button-primary" id="retryButton">
+    <section class="error-card">
+      <span class="eyebrow">
+        Technischer Hinweis
+      </span>
+
+      <h2>
+        Die Daten konnten nicht geladen werden
+      </h2>
+
+      <p>
+        ${escapeHtml(
+          error &&
+          error.message
+            ? error.message
+            : 'Unbekannter Fehler'
+        )}
+      </p>
+
+      <button
+        class="button button-primary"
+        id="retryButton"
+      >
         Erneut versuchen
       </button>
     </section>
   `;
 
   document
-    .getElementById('retryButton')
+    .getElementById(
+      'retryButton'
+    )
     .addEventListener(
       'click',
-      loadInitialData
+      () =>
+        window.location.reload()
     );
 }
 
-function metricCard(label, value, detail) {
+function metricCard(
+  label,
+  value,
+  detail
+) {
   return `
     <article class="metric-card">
-      <span class="metric-label">${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      <span class="metric-detail">${escapeHtml(detail)}</span>
+      <span class="metric-label">
+        ${escapeHtml(label)}
+      </span>
+
+      <strong>
+        ${escapeHtml(value)}
+      </strong>
+
+      <span class="metric-detail">
+        ${escapeHtml(detail)}
+      </span>
     </article>
   `;
 }
 
-function setPageHeading(title, description) {
-  elements.pageTitle.textContent = title;
+function setPageHeading(
+  title,
+  description
+) {
+  elements.pageTitle.textContent =
+    title;
+
   elements.pageDescription.textContent =
     description;
 }
 
-function setLoading(loading) {
-  state.loading = loading;
-  elements.app.classList.toggle(
-    'is-loading',
-    loading
-  );
-}
-
-function setConnection(stateName, text) {
+function setConnection(
+  stateName,
+  text
+) {
   elements.connection.dataset.state =
     stateName;
+
   elements.connection
-    .querySelector('span:last-child')
-    .textContent = text;
+    .querySelector(
+      'span:last-child'
+    )
+    .textContent =
+    text;
 }
 
 function toggleMobileNavigation() {
   const isOpen =
-    elements.sidebar.classList.toggle(
-      'is-open'
-    );
+    elements.sidebar
+      .classList
+      .toggle(
+        'is-open'
+      );
 
-  elements.overlay.hidden = !isOpen;
-  elements.mobileMenuButton.setAttribute(
-    'aria-expanded',
-    String(isOpen)
-  );
+  elements.overlay.hidden =
+    !isOpen;
+
+  elements.mobileMenuButton
+    .setAttribute(
+      'aria-expanded',
+      String(isOpen)
+    );
 }
 
 function closeMobileNavigation() {
-  elements.sidebar.classList.remove(
-    'is-open'
-  );
-  elements.overlay.hidden = true;
-  elements.mobileMenuButton.setAttribute(
-    'aria-expanded',
-    'false'
-  );
+  elements.sidebar
+    .classList
+    .remove(
+      'is-open'
+    );
+
+  elements.overlay.hidden =
+    true;
+
+  elements.mobileMenuButton
+    .setAttribute(
+      'aria-expanded',
+      'false'
+    );
+}
+
+function parseDate(value) {
+  const match =
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? new Date(
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1])
+      ).getTime()
+    : Number.MAX_SAFE_INTEGER;
 }
 
 function escapeHtml(value) {
