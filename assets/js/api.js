@@ -25,10 +25,20 @@ export function getTenant() {
 
 export async function apiGet(
   action,
-  params = {}
+  params = {},
+  requestOptions = {}
 ) {
   const maximumAttempts =
-    3;
+    Number(
+      requestOptions.attempts ||
+      3
+    );
+
+  const timeoutMs =
+    Number(
+      requestOptions.timeoutMs ||
+      APP_CONFIG.requestTimeoutMs
+    );
 
   let lastError;
 
@@ -88,7 +98,8 @@ export async function apiGet(
           cache:
             'no-store'
         },
-        action
+        action,
+        timeoutMs
       );
     } catch (error) {
       lastError =
@@ -140,7 +151,8 @@ export async function apiPost(
       },
       body: JSON.stringify(body)
     },
-    action
+    action,
+    APP_CONFIG.requestTimeoutMs
   );
 }
 
@@ -189,12 +201,24 @@ function waitForApiRetry_(
   );
 }
 
-async function requestJson(url, options, action) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(
-    () => controller.abort(),
-    APP_CONFIG.requestTimeoutMs
-  );
+async function requestJson(
+  url,
+  options,
+  action,
+  timeoutMs
+) {
+  const controller =
+    new AbortController();
+
+  const timeout =
+    window.setTimeout(
+      () =>
+        controller.abort(),
+      Number(
+        timeoutMs ||
+        APP_CONFIG.requestTimeoutMs
+      )
+    );
 
   try {
     const response = await fetch(url, {
