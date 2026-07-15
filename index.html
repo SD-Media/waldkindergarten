@@ -22,7 +22,7 @@
 
   <link
     rel="stylesheet"
-    href="./assets/css/app.css"
+    href="./assets/css/app.css?v=2.2.0"
   >
 </head>
 
@@ -73,8 +73,8 @@
         </a>
 
         <a
-          href="#events"
-          data-route-link="events"
+          href="#overview"
+          data-route-link="overview"
         >
           <span
             class="nav-icon"
@@ -84,7 +84,7 @@
           </span>
 
           <span>
-            Einsätze
+            Übersicht
           </span>
         </a>
 
@@ -207,7 +207,7 @@
 
         <div class="topbar-actions">
           <span class="version-badge">
-            Version 2.0
+            Version 2.2
           </span>
         </div>
       </header>
@@ -216,6 +216,25 @@
         id="pageContent"
         class="page-content"
       >
+        <section class="info-banner">
+          <span
+            class="info-banner-icon"
+            aria-hidden="true"
+          >
+            i
+          </span>
+
+          <div>
+            <strong>
+              Daten werden geladen.
+            </strong>
+
+            <span>
+              Dies kann einen kleinen Moment dauern.
+            </span>
+          </div>
+        </section>
+
         <section class="panel-card">
           <div class="skeleton skeleton-title"></div>
           <div class="skeleton"></div>
@@ -231,7 +250,7 @@
 
   <script
     type="module"
-    src="./assets/js/app.js"
+    src="./assets/js/app.js?v=2.2.0"
   ></script>
 </body>
 </html>
