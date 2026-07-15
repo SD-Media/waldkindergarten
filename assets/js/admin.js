@@ -1378,19 +1378,38 @@ function openListForm(
               ? 'form-grid-three'
               : 'form-grid-two'
           }">
-            <label class="form-field">
-              <span>Plätze / benötigte Anzahl</span>
+            <div class="quantity-field-group">
+              <label class="form-field">
+                <span>Plätze / benötigte Anzahl</span>
 
-              <input
-                name="anzahl"
-                type="number"
-                min="0"
-                step="1"
-                value="${editing
-                  ? escapeHtml(list.anzahl)
-                  : '1'}"
-              >
-            </label>
+                <input
+                  name="anzahl"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="${editing &&
+                    Number(list.anzahl || 0) > 0
+                      ? escapeHtml(list.anzahl)
+                      : '1'}"
+                  ${editing &&
+                    Number(list.anzahl || 0) === 0
+                      ? 'disabled'
+                      : ''}
+                >
+              </label>
+
+              <label class="checkbox-field">
+                <input
+                  name="unbegrenzt"
+                  type="checkbox"
+                  ${editing &&
+                    Number(list.anzahl || 0) === 0
+                      ? 'checked'
+                      : ''}
+                >
+                <span>Unbegrenzt</span>
+              </label>
+            </div>
 
             ${settings.punkteAktiv === true
               ? `
@@ -1494,6 +1513,35 @@ function openListForm(
 
   form.elements.titel.focus();
 
+  const unlimitedCheckbox =
+    form.elements.unbegrenzt;
+
+  const quantityInput =
+    form.elements.anzahl;
+
+  const updateQuantityState =
+    () => {
+      quantityInput.disabled =
+        unlimitedCheckbox.checked;
+
+      if (
+        !unlimitedCheckbox.checked &&
+        Number(
+          quantityInput.value || 0
+        ) < 1
+      ) {
+        quantityInput.value =
+          '1';
+      }
+    };
+
+  unlimitedCheckbox.addEventListener(
+    'change',
+    updateQuantityState
+  );
+
+  updateQuantityState();
+
   form.addEventListener(
     'submit',
     async submitEvent => {
@@ -1542,10 +1590,15 @@ function openListForm(
         kategorie:
           form.elements.kategorie.value,
         anzahl:
-          Number(
-            form.elements.anzahl.value ||
-            0
-          ),
+          form.elements.unbegrenzt.checked
+            ? 0
+            : Math.max(
+                1,
+                Number(
+                  form.elements.anzahl.value ||
+                  1
+                )
+              ),
         punkte:
           settings.punkteAktiv === true
             ? Number(
@@ -1767,7 +1820,7 @@ async function deleteList(
 ) {
   if (
     !window.confirm(
-      'Diesen Einsatz beziehungsweise diese Liste wirklich löschen? Vorhandene Eintragungen müssen vorher entfernt werden.'
+      'Diesen Einsatz beziehungsweise diese Liste wirklich löschen?'
     )
   ) {
     return;
