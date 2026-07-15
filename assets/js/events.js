@@ -1,109 +1,93 @@
 /**
- * Vereinsverwaltung – öffentliches Modul „Einsätze“
+ * Vereinsverwaltung – öffentliche Übersicht
  */
 
 import {
-  apiGet,
   apiPost
 } from './api.js';
 
-const moduleState = {
-  events: [],
-  lists: [],
-  entries: [],
-  categories: [],
-  settings: {},
+import {
+  getStoreSnapshot,
+  refreshStore,
+  getAllEvents
+} from './store.js';
+
+const viewState = {
   search: '',
   category: '',
-  availability: 'all',
-  loading: false
+  availability: 'all'
 };
 
-/**
- * Rendert die vollständige Einsatzseite.
- *
- * @param {Object} options
- */
-export async function renderEventsPage(options) {
+export async function renderOverviewPage(
+  options
+) {
   const {
     contentElement,
-    setPageHeading,
-    settings = {},
-    categories = [],
-    refreshFrontendData
+    setPageHeading
   } = options;
 
-  moduleState.settings = settings;
-  moduleState.categories = Array.isArray(categories)
-    ? categories
-    : [];
-
   setPageHeading(
-    'Einsätze',
-    'Veranstaltungen, Aufgaben und freie Plätze'
+    'Übersicht',
+    'Veranstaltungen, Einsätze und Listen'
   );
 
-  contentElement.innerHTML = createLoadingMarkup();
-
-  try {
-    moduleState.loading = true;
-
-    const [
-      events,
-      lists,
-      entries
-    ] = await Promise.all([
-      apiGet('events'),
-      apiGet('lists'),
-      apiGet('entries')
-    ]);
-
-    moduleState.events = Array.isArray(events)
-      ? events
-      : [];
-
-    moduleState.lists = Array.isArray(lists)
-      ? lists
-      : [];
-
-    moduleState.entries = Array.isArray(entries)
-      ? entries
-      : [];
-
-    renderContent(
-      contentElement,
-      refreshFrontendData
-    );
-  } catch (error) {
-    renderModuleError(
-      contentElement,
-      error,
-      () => renderEventsPage(options)
-    );
-  } finally {
-    moduleState.loading = false;
-  }
+  renderOverview(
+    contentElement,
+    options
+  );
 }
 
-function renderContent(
+function renderOverview(
   contentElement,
-  refreshFrontendData
+  options
 ) {
-  const filteredEvents =
-    getFilteredEvents();
+  const snapshot =
+    getStoreSnapshot();
+
+  const data =
+    snapshot.frontendData;
+
+  if (!data) {
+    contentElement.innerHTML =
+      createLoadingMarkup();
+
+    return;
+  }
+
+  const settings =
+    data.einstellungen || {};
+
+  const categories =
+    snapshot.categories || [];
+
+  const events =
+    filterEvents(
+      getAllEvents()
+    );
 
   contentElement.innerHTML = `
+    <section class="info-banner">
+      <span class="info-banner-icon" aria-hidden="true">i</span>
+      <div>
+        <strong>Daten werden geladen und aktualisiert.</strong>
+        <span>
+          Dies kann beim ersten Öffnen einen kleinen Moment dauern.
+        </span>
+      </div>
+    </section>
+
     <section class="events-toolbar panel-card">
       <div class="events-search-wrap">
-        <label class="sr-only" for="eventsSearch">
-          Einsätze durchsuchen
+        <label class="sr-only" for="overviewSearch">
+          Übersicht durchsuchen
         </label>
+
         <input
-          id="eventsSearch"
+          id="overviewSearch"
           class="search-input"
           type="search"
-          value="${escapeHtml(moduleState.search)}"
-          placeholder="Veranstaltungen und Einsätze durchsuchen …"
+          value="${escapeHtml(viewState.search)}"
+          placeholder="Veranstaltungen, Einsätze und Listen durchsuchen …"
           autocomplete="off"
         >
       </div>
@@ -111,13 +95,17 @@ function renderContent(
       <div class="events-filter-row">
         <label class="filter-field">
           <span>Kategorie</span>
-          <select id="categoryFilter">
-            <option value="">Alle Kategorien</option>
-            ${moduleState.categories
+
+          <select id="overviewCategoryFilter">
+            <option value="">
+              Alle Kategorien
+            </option>
+
+            ${categories
               .map(category => `
                 <option
                   value="${escapeHtml(category.bezeichnung)}"
-                  ${moduleState.category === category.bezeichnung
+                  ${viewState.category === category.bezeichnung
                     ? 'selected'
                     : ''}
                 >
@@ -130,30 +118,33 @@ function renderContent(
 
         <label class="filter-field">
           <span>Verfügbarkeit</span>
-          <select id="availabilityFilter">
+
+          <select id="overviewAvailabilityFilter">
             <option
               value="all"
-              ${moduleState.availability === 'all'
+              ${viewState.availability === 'all'
                 ? 'selected'
                 : ''}
             >
               Alle
             </option>
+
             <option
               value="available"
-              ${moduleState.availability === 'available'
+              ${viewState.availability === 'available'
                 ? 'selected'
                 : ''}
             >
               Nur mit freien Plätzen
             </option>
+
             <option
               value="open"
-              ${moduleState.availability === 'open'
+              ${viewState.availability === 'open'
                 ? 'selected'
                 : ''}
             >
-              Nur offene Listen
+              Nur offene Einsätze
             </option>
           </select>
         </label>
@@ -161,190 +152,219 @@ function renderContent(
     </section>
 
     <section class="events-summary">
-      <div>
-        <strong>${filteredEvents.length}</strong>
-        <span>
-          ${filteredEvents.length === 1
-            ? 'Veranstaltung'
-            : 'Veranstaltungen'}
-        </span>
-      </div>
-      <div>
-        <strong>${countVisibleLists(filteredEvents)}</strong>
-        <span>
-          ${countVisibleLists(filteredEvents) === 1
-            ? 'Einsatz'
-            : 'Einsätze'}
-        </span>
-      </div>
-      <div>
-        <strong>${countAvailablePlaces(filteredEvents)}</strong>
-        <span>freie Plätze</span>
-      </div>
+      ${summaryPill(
+        events.length,
+        events.length === 1
+          ? 'Veranstaltung'
+          : 'Veranstaltungen'
+      )}
+
+      ${summaryPill(
+        countLists(events),
+        countLists(events) === 1
+          ? 'Einsatz / Liste'
+          : 'Einsätze / Listen'
+      )}
+
+      ${summaryPill(
+        countFreePlaces(events),
+        'freie Plätze'
+      )}
     </section>
 
-    <section id="eventsResults" class="events-stack">
-      ${filteredEvents.length
-        ? filteredEvents
+    <section class="events-stack">
+      ${events.length
+        ? events
             .map(event =>
-              renderEventCard(
+              renderEvent(
                 event,
-                getVisibleListsForEvent(event.id)
+                categories,
+                settings,
+                contentElement,
+                options
               )
             )
             .join('')
         : renderNoResults()}
     </section>
 
-    <div id="entryDialogRoot"></div>
-    <div id="eventsToastRoot" class="toast-root"></div>
+    <div id="overviewDialogRoot"></div>
+    <div id="overviewToastRoot" class="toast-root"></div>
   `;
 
   bindFilters(
     contentElement,
-    refreshFrontendData
+    options
   );
 
   bindEntryButtons(
     contentElement,
-    refreshFrontendData
+    options
   );
 }
 
-function getFilteredEvents() {
+function filterEvents(events) {
   const search =
-    normalizeText(moduleState.search);
-
-  return moduleState.events.filter(event => {
-    const lists =
-      getVisibleListsForEvent(event.id);
-
-    if (!lists.length) {
-      return false;
-    }
-
-    if (!search) {
-      return true;
-    }
-
-    const eventText = normalizeText([
-      event.titel,
-      event.beschreibung,
-      event.startdatum,
-      event.enddatum
-    ].join(' '));
-
-    const listText = normalizeText(
-      lists.map(list => [
-        list.titel,
-        list.beschreibung,
-        list.kategorie,
-        list.typ,
-        list.datum,
-        list.uhrzeit
-      ].join(' ')).join(' ')
+    normalizeText(
+      viewState.search
     );
 
-    return (
-      eventText.includes(search) ||
-      listText.includes(search)
-    );
-  });
-}
-
-function getVisibleListsForEvent(eventId) {
-  return moduleState.lists
-    .filter(list =>
-      String(list.veranstaltungId) ===
-      String(eventId)
-    )
-    .filter(list => {
+  return events
+    .map(event => ({
+      ...event,
+      listen:
+        getFilteredLists(
+          event.listen || []
+        )
+    }))
+    .filter(event => {
       if (
-        moduleState.category &&
-        list.kategorie !== moduleState.category
+        event.listen.length < 1
       ) {
         return false;
       }
 
-      const occupancy =
-        getOccupancy(list);
+      if (!search) {
+        return true;
+      }
+
+      const eventText =
+        normalizeText([
+          event.titel,
+          event.beschreibung,
+          event.startdatum,
+          event.enddatum,
+          event.verantwortlich
+        ].join(' '));
+
+      const listText =
+        normalizeText(
+          event.listen
+            .map(list => [
+              list.titel,
+              list.beschreibung,
+              list.kategorie,
+              list.typ,
+              list.datum,
+              list.uhrzeit,
+              list.verantwortlich
+            ].join(' '))
+            .join(' ')
+        );
+
+      return (
+        eventText.includes(search) ||
+        listText.includes(search)
+      );
+    })
+    .sort(
+      compareEvents
+    );
+}
+
+function getFilteredLists(lists) {
+  return lists
+    .filter(list => {
+      if (
+        viewState.category &&
+        list.kategorie !==
+          viewState.category
+      ) {
+        return false;
+      }
 
       if (
-        moduleState.availability ===
+        viewState.availability ===
         'available'
       ) {
         return (
-          String(list.status).toLowerCase() ===
+          String(list.status)
+            .toLowerCase() ===
             'offen' &&
-          occupancy.isAvailable
+          list.voll !== true
         );
       }
 
       if (
-        moduleState.availability ===
+        viewState.availability ===
         'open'
       ) {
         return (
-          String(list.status).toLowerCase() ===
+          String(list.status)
+            .toLowerCase() ===
           'offen'
         );
       }
 
       return true;
     })
-    .sort((a, b) => {
-      const sortA = Number(a.sortierung || 0);
-      const sortB = Number(b.sortierung || 0);
-
-      if (sortA !== sortB) {
-        return sortA - sortB;
-      }
-
-      return String(a.titel || '')
-        .localeCompare(
-          String(b.titel || ''),
-          'de'
-        );
-    });
+    .sort(
+      compareLists
+    );
 }
 
-function renderEventCard(event, lists) {
+function renderEvent(
+  event,
+  categories,
+  settings
+) {
+  const date =
+    parseGermanDate(
+      event.startdatum
+    );
+
   return `
     <article class="event-card">
       <header class="event-card-header">
-        <div class="event-date-block">
-          <span>${escapeHtml(
-            formatEventDate(event)
-          )}</span>
-        </div>
+        ${renderDateBadge(
+          date,
+          event.startdatum
+        )}
 
         <div class="event-title-area">
           <div class="event-title-row">
-            <h2>${escapeHtml(event.titel)}</h2>
-            <span class="status-badge ${
-              String(event.status).toLowerCase() ===
-                'offen'
-                ? 'is-open'
-                : 'is-closed'
-            }">
-              ${escapeHtml(
-                String(event.status || 'offen')
-              )}
-            </span>
+            <div>
+              <span class="event-kicker">
+                Veranstaltung
+              </span>
+
+              <h2>
+                ${escapeHtml(event.titel)}
+              </h2>
+            </div>
+
+            ${statusBadge(event.status)}
           </div>
 
           ${event.beschreibung
-            ? `<p>${escapeHtml(event.beschreibung)}</p>`
+            ? `
+              <p>
+                ${escapeHtml(event.beschreibung)}
+              </p>
+            `
+            : ''}
+
+          ${event.verantwortlich
+            ? `
+              <div class="event-responsible">
+                <span>Verantwortlich</span>
+                <strong>
+                  ${escapeHtml(event.verantwortlich)}
+                </strong>
+              </div>
+            `
             : ''}
         </div>
       </header>
 
       <div class="event-list-grid">
-        ${lists
+        ${event.listen
           .map(list =>
-            renderListCard(
+            renderList(
               list,
-              event
+              event,
+              categories,
+              settings
             )
           )
           .join('')}
@@ -353,33 +373,60 @@ function renderEventCard(event, lists) {
   `;
 }
 
-function renderListCard(list, event) {
-  const occupancy =
-    getOccupancy(list);
-
+function renderList(
+  list,
+  event,
+  categories,
+  settings
+) {
   const category =
-    getCategory(list.kategorie);
+    categories.find(item =>
+      item.bezeichnung ===
+      list.kategorie
+    ) || {
+      farbe:
+        '#546E7A',
+      bezeichnung:
+        list.kategorie ||
+        'Sonstiges'
+    };
+
+  const entries =
+    Array.isArray(
+      list.eintragungen
+    )
+      ? list.eintragungen
+      : [];
 
   const isOpen =
-    String(list.status).toLowerCase() ===
+    String(list.status)
+      .toLowerCase() ===
     'offen';
+
+  const hasLimit =
+    Number(list.anzahl || 0) >
+    0;
+
+  const free =
+    hasLimit
+      ? Math.max(
+          Number(list.anzahl) -
+            entries.length,
+          0
+        )
+      : null;
 
   const canRegister =
     isOpen &&
-    occupancy.isAvailable;
-
-  const type =
-    normalizeListType(list.typ);
-
-  const entries =
-    getEntriesForList(list.id);
+    (
+      !hasLimit ||
+      free > 0
+    );
 
   return `
     <article
       class="assignment-card"
-      style="--category-color:${escapeHtml(
-        category.farbe
-      )}"
+      style="--category-color:${escapeHtml(category.farbe)}"
     >
       <div class="assignment-accent"></div>
 
@@ -390,62 +437,78 @@ function renderListCard(list, event) {
             style="
               --chip-color:${escapeHtml(category.farbe)};
               --chip-background:${escapeHtml(
-                hexToRgba(category.farbe, 0.11)
+                hexToRgba(
+                  category.farbe,
+                  0.11
+                )
               )};
             "
           >
-            ${escapeHtml(list.kategorie || 'Sonstiges')}
+            ${escapeHtml(
+              category.bezeichnung
+            )}
           </span>
 
           <span class="type-label">
-            ${escapeHtml(type.label)}
+            ${escapeHtml(
+              normalizeTypeLabel(
+                list.typ
+              )
+            )}
           </span>
         </div>
 
-        <h3>${escapeHtml(list.titel)}</h3>
+        <h3>
+          ${escapeHtml(list.titel)}
+        </h3>
 
         ${list.beschreibung
-          ? `<p class="assignment-description">
+          ? `
+            <p class="assignment-description">
               ${escapeHtml(list.beschreibung)}
-            </p>`
+            </p>
+          `
           : ''}
 
         <div class="assignment-meta">
-          ${list.datum
-            ? metaItem('Datum', list.datum)
-            : ''}
+          ${metaItem(
+            'Datum',
+            list.datum ||
+            event.startdatum ||
+            'Ohne Datum'
+          )}
+
           ${list.uhrzeit
-            ? metaItem('Uhrzeit', list.uhrzeit)
+            ? metaItem(
+                'Uhrzeit',
+                list.uhrzeit +
+                ' Uhr'
+              )
             : ''}
-          ${pointsMarkup(list)}
+
+          ${list.verantwortlich
+            ? metaItem(
+                'Verantwortlich',
+                list.verantwortlich
+              )
+            : ''}
+
+          ${settings.punkteAktiv === true
+            ? metaItem(
+                settings.punkteBezeichnung ||
+                  'Punkte',
+                String(
+                  list.punkte ?? 0
+                )
+              )
+            : ''}
         </div>
 
-        ${occupancy.maximum > 0
-          ? `
-            <div class="occupancy-block">
-              <div class="occupancy-heading">
-                <span>
-                  ${occupancy.used} von
-                  ${occupancy.maximum} belegt
-                </span>
-                <strong>
-                  ${occupancy.free > 0
-                    ? occupancy.free +
-                      ' frei'
-                    : 'Voll'}
-                </strong>
-              </div>
-
-              <div
-                class="progress-track"
-                aria-label="${occupancy.used} von ${occupancy.maximum} Plätzen belegt"
-              >
-                <span
-                  style="width:${occupancy.percent}%"
-                ></span>
-              </div>
-            </div>
-          `
+        ${hasLimit
+          ? occupancyMarkup(
+              entries.length,
+              Number(list.anzahl)
+            )
           : `
             <div class="occupancy-unlimited">
               Keine feste Begrenzung
@@ -457,13 +520,14 @@ function renderListCard(list, event) {
             <details class="entry-list">
               <summary>
                 Bereits eingetragen
-                <span>${entries.length}</span>
+                <span>
+                  ${entries.length}
+                </span>
               </summary>
+
               <div class="entry-list-content">
                 ${entries
-                  .map(entry =>
-                    renderEntry(entry, type)
-                  )
+                  .map(renderPublicEntry)
                   .join('')}
               </div>
             </details>
@@ -482,14 +546,13 @@ function renderListCard(list, event) {
                 ? 'button-primary'
                 : 'button-disabled'
             }"
-            data-entry-list-id="${escapeHtml(list.id)}"
-            data-event-title="${escapeHtml(event.titel)}"
+            data-public-entry-list-id="${escapeHtml(list.id)}"
             ${canRegister
               ? ''
               : 'disabled'}
           >
             ${isOpen
-              ? occupancy.isAvailable
+              ? canRegister
                 ? 'Jetzt eintragen'
                 : 'Keine Plätze frei'
               : 'Eintragung geschlossen'}
@@ -500,35 +563,42 @@ function renderListCard(list, event) {
   `;
 }
 
-function renderEntry(entry, type) {
-  const details = [];
-
-  if (
-    type.needsContribution &&
-    entry.beitrag
-  ) {
-    details.push(entry.beitrag);
-  }
-
-  if (
-    entry.menge !== '' &&
-    entry.menge !== null &&
-    entry.menge !== undefined
-  ) {
-    details.push('Menge: ' + entry.menge);
-  }
-
+function renderPublicEntry(entry) {
   return `
     <div class="entry-person">
       <span class="entry-avatar">
         ${escapeHtml(
-          getInitials(entry.name)
+          getInitials(
+            entry.name
+          )
         )}
       </span>
+
       <div>
-        <strong>${escapeHtml(entry.name)}</strong>
-        ${details.length
-          ? `<span>${escapeHtml(details.join(' · '))}</span>`
+        <strong>
+          ${escapeHtml(entry.name)}
+        </strong>
+
+        ${entry.beitrag
+          ? `
+            <span>
+              ${escapeHtml(entry.beitrag)}
+              ${entry.menge !== '' &&
+                entry.menge !== null &&
+                entry.menge !== undefined
+                ? ' · Menge: ' +
+                  escapeHtml(entry.menge)
+                : ''}
+            </span>
+          `
+          : ''}
+
+        ${entry.bemerkung
+          ? `
+            <span class="entry-remark">
+              ${escapeHtml(entry.bemerkung)}
+            </span>
+          `
           : ''}
       </div>
     </div>
@@ -537,69 +607,77 @@ function renderEntry(entry, type) {
 
 function bindFilters(
   contentElement,
-  refreshFrontendData
+  options
 ) {
   const search =
     contentElement.querySelector(
-      '#eventsSearch'
+      '#overviewSearch'
     );
 
   const category =
     contentElement.querySelector(
-      '#categoryFilter'
+      '#overviewCategoryFilter'
     );
 
   const availability =
     contentElement.querySelector(
-      '#availabilityFilter'
+      '#overviewAvailabilityFilter'
     );
 
-  let searchTimeout;
+  let timer;
 
-  search.addEventListener('input', event => {
-    window.clearTimeout(searchTimeout);
+  search.addEventListener(
+    'input',
+    event => {
+      clearTimeout(timer);
 
-    searchTimeout = window.setTimeout(() => {
-      moduleState.search =
+      timer =
+        window.setTimeout(() => {
+          viewState.search =
+            event.target.value;
+
+          renderOverview(
+            contentElement,
+            options
+          );
+
+          const nextSearch =
+            contentElement.querySelector(
+              '#overviewSearch'
+            );
+
+          nextSearch.focus();
+
+          nextSearch.setSelectionRange(
+            nextSearch.value.length,
+            nextSearch.value.length
+          );
+        }, 180);
+    }
+  );
+
+  category.addEventListener(
+    'change',
+    event => {
+      viewState.category =
         event.target.value;
 
-      renderContent(
+      renderOverview(
         contentElement,
-        refreshFrontendData
+        options
       );
-
-      const newSearch =
-        contentElement.querySelector(
-          '#eventsSearch'
-        );
-
-      newSearch.focus();
-      newSearch.setSelectionRange(
-        newSearch.value.length,
-        newSearch.value.length
-      );
-    }, 180);
-  });
-
-  category.addEventListener('change', event => {
-    moduleState.category =
-      event.target.value;
-
-    renderContent(
-      contentElement,
-      refreshFrontendData
-    );
-  });
+    }
+  );
 
   availability.addEventListener(
     'change',
     event => {
-      moduleState.availability =
+      viewState.availability =
         event.target.value;
 
-      renderContent(
+      renderOverview(
         contentElement,
-        refreshFrontendData
+        options
       );
     }
   );
@@ -607,32 +685,46 @@ function bindFilters(
 
 function bindEntryButtons(
   contentElement,
-  refreshFrontendData
+  options
 ) {
   contentElement
     .querySelectorAll(
-      '[data-entry-list-id]'
+      '[data-public-entry-list-id]'
     )
     .forEach(button => {
       button.addEventListener(
         'click',
         () => {
+          const event =
+            getAllEvents()
+              .find(item =>
+                (
+                  item.listen || []
+                ).some(list =>
+                  list.id ===
+                  button.dataset.publicEntryListId
+                )
+              );
+
           const list =
-            moduleState.lists.find(item =>
-              item.id ===
-              button.dataset.entryListId
+            event
+              ? event.listen.find(item =>
+                  item.id ===
+                  button.dataset.publicEntryListId
+                )
+              : null;
+
+          if (
+            event &&
+            list
+          ) {
+            openEntryDialog(
+              contentElement,
+              event,
+              list,
+              options
             );
-
-          if (!list) {
-            return;
           }
-
-          openEntryDialog(
-            contentElement,
-            list,
-            button.dataset.eventTitle,
-            refreshFrontendData
-          );
         }
       );
     });
@@ -640,36 +732,43 @@ function bindEntryButtons(
 
 function openEntryDialog(
   contentElement,
+  event,
   list,
-  eventTitle,
-  refreshFrontendData
+  options
 ) {
-  const type =
-    normalizeListType(list.typ);
-
-  const pointsEnabled =
-    moduleState.settings.punkteAktiv ===
-    true;
-
   const root =
     contentElement.querySelector(
-      '#entryDialogRoot'
+      '#overviewDialogRoot'
     );
 
+  const settings =
+    getStoreSnapshot()
+      .frontendData
+      .einstellungen || {};
+
+  const needsContribution =
+    normalizeText(list.typ)
+      .includes('kuchen') ||
+    normalizeText(list.typ)
+      .includes('beitrag') ||
+    normalizeText(list.typ)
+      .includes('sach');
+
   root.innerHTML = `
-    <div class="dialog-backdrop" data-dialog-close>
+    <div class="dialog-backdrop">
       <section
         class="dialog-card"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="entryDialogTitle"
+        aria-labelledby="publicEntryTitle"
       >
         <header class="dialog-header">
           <div>
             <span class="eyebrow">
-              ${escapeHtml(eventTitle)}
+              ${escapeHtml(event.titel)}
             </span>
-            <h2 id="entryDialogTitle">
+
+            <h2 id="publicEntryTitle">
               ${escapeHtml(list.titel)}
             </h2>
           </div>
@@ -677,16 +776,20 @@ function openEntryDialog(
           <button
             type="button"
             class="icon-button"
-            aria-label="Dialog schließen"
             data-dialog-close
+            aria-label="Dialog schließen"
           >
             ×
           </button>
         </header>
 
-        <form id="entryForm" class="dialog-form">
+        <form
+          id="publicEntryForm"
+          class="dialog-form"
+        >
           <label class="form-field">
             <span>Name</span>
+
             <input
               name="name"
               type="text"
@@ -697,47 +800,49 @@ function openEntryDialog(
             >
           </label>
 
-          ${pointsEnabled
+          ${settings.punkteAktiv === true
             ? `
               <p class="form-hint">
-                Bitte verwende bei allen Eintragungen immer dieselbe
-                Schreibweise, damit deine Punkte korrekt zusammengeführt
-                werden.
+                Bitte verwende bei allen Eintragungen dieselbe
+                Schreibweise deines Namens.
               </p>
             `
             : ''}
 
-          ${type.needsContribution
+          ${needsContribution
             ? `
               <label class="form-field">
                 <span>Beitrag</span>
+
                 <input
                   name="beitrag"
                   type="text"
                   maxlength="200"
                   required
-                  placeholder="${escapeHtml(
-                    type.contributionPlaceholder
-                  )}"
+                  placeholder="Was bringst du mit?"
                 >
               </label>
 
               <label class="form-field">
                 <span>Menge</span>
+
                 <input
                   name="menge"
                   type="number"
                   min="1"
                   step="1"
                   value="1"
-                  required
                 >
               </label>
             `
             : ''}
 
           <label class="form-field">
-            <span>Bemerkung <small>optional</small></span>
+            <span>
+              Bemerkung
+              <small>optional und öffentlich sichtbar</small>
+            </span>
+
             <textarea
               name="bemerkung"
               rows="3"
@@ -747,7 +852,7 @@ function openEntryDialog(
           </label>
 
           <div
-            id="entryFormError"
+            id="publicEntryError"
             class="form-error"
             hidden
           ></div>
@@ -773,166 +878,498 @@ function openEntryDialog(
     </div>
   `;
 
-  const backdrop =
-    root.querySelector('.dialog-backdrop');
-
   const form =
-    root.querySelector('#entryForm');
+    root.querySelector(
+      '#publicEntryForm'
+    );
 
-  const nameInput =
-    form.elements.name;
+  let dirty =
+    false;
 
-  window.setTimeout(
-    () => nameInput.focus(),
-    50
-  );
-
-  root
-    .querySelectorAll('[data-dialog-close]')
-    .forEach(element => {
-      element.addEventListener(
-        'click',
-        event => {
-          if (
-            event.target === backdrop ||
-            event.currentTarget !== backdrop
-          ) {
-            closeDialog(root);
-          }
-        }
-      );
-    });
-
-  backdrop.addEventListener(
-    'click',
-    event => {
-      if (event.target === backdrop) {
-        closeDialog(root);
-      }
+  form.addEventListener(
+    'input',
+    () => {
+      dirty = true;
     }
   );
 
-  document.addEventListener(
-    'keydown',
-    function escapeListener(event) {
-      if (event.key === 'Escape') {
-        closeDialog(root);
-        document.removeEventListener(
-          'keydown',
-          escapeListener
-        );
-      }
-    }
+  bindSafeDialogClose(
+    root,
+    () => dirty
   );
+
+  form.elements.name.focus();
 
   form.addEventListener(
     'submit',
     async event => {
       event.preventDefault();
 
-      const submitButton =
+      const button =
         form.querySelector(
           '[type="submit"]'
         );
 
       const errorBox =
         form.querySelector(
-          '#entryFormError'
+          '#publicEntryError'
         );
 
-      const formData =
-        new FormData(form);
+      button.disabled =
+        true;
 
-      const payload = {
-        listenId: list.id,
-        name:
-          String(
-            formData.get('name') || ''
-          ).trim(),
-        beitrag:
-          String(
-            formData.get('beitrag') || ''
-          ).trim(),
-        menge:
-          formData.get('menge')
-            ? Number(formData.get('menge'))
-            : '',
-        bemerkung:
-          String(
-            formData.get('bemerkung') || ''
-          ).trim()
-      };
-
-      submitButton.disabled = true;
-      submitButton.textContent =
+      button.textContent =
         'Wird gespeichert …';
 
-      errorBox.hidden = true;
-      errorBox.textContent = '';
+      errorBox.hidden =
+        true;
 
       try {
+        const data =
+          new FormData(form);
+
         await apiPost(
           'createentry',
           {
-            data: payload
+            data: {
+              listenId:
+                list.id,
+              name:
+                String(
+                  data.get('name') ||
+                  ''
+                ).trim(),
+              beitrag:
+                String(
+                  data.get('beitrag') ||
+                  ''
+                ).trim(),
+              menge:
+                data.get('menge')
+                  ? Number(
+                      data.get('menge')
+                    )
+                  : '',
+              bemerkung:
+                String(
+                  data.get('bemerkung') ||
+                  ''
+                ).trim()
+            }
           }
         );
 
-        closeDialog(root);
+        dirty =
+          false;
+
+        root.innerHTML =
+          '';
+
+        await refreshStore();
 
         showToast(
           contentElement,
-          'Eintragung erfolgreich gespeichert.',
-          'success'
+          'Eintragung erfolgreich gespeichert.'
         );
 
-        const [
-          entries
-        ] = await Promise.all([
-          apiGet('entries'),
-          typeof refreshFrontendData ===
-            'function'
-            ? refreshFrontendData()
-            : Promise.resolve()
-        ]);
-
-        moduleState.entries =
-          Array.isArray(entries)
-            ? entries
-            : [];
-
-        renderContent(
+        renderOverview(
           contentElement,
-          refreshFrontendData
+          options
         );
       } catch (error) {
         errorBox.textContent =
-          error && error.message
+          error &&
+          error.message
             ? error.message
             : 'Die Eintragung konnte nicht gespeichert werden.';
 
-        errorBox.hidden = false;
+        errorBox.hidden =
+          false;
 
-        submitButton.disabled = false;
-        submitButton.textContent =
+        button.disabled =
+          false;
+
+        button.textContent =
           'Eintragung speichern';
       }
     }
   );
 }
 
-function closeDialog(root) {
-  root.innerHTML = '';
+function bindSafeDialogClose(
+  root,
+  isDirty
+) {
+  root
+    .querySelectorAll(
+      '[data-dialog-close]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          if (
+            isDirty() &&
+            !window.confirm(
+              'Ungespeicherte Eingaben verwerfen?'
+            )
+          ) {
+            return;
+          }
+
+          root.innerHTML =
+            '';
+        }
+      );
+    });
+}
+
+function occupancyMarkup(
+  used,
+  maximum
+) {
+  const free =
+    Math.max(
+      maximum -
+        used,
+      0
+    );
+
+  const percent =
+    Math.min(
+      Math.round(
+        used /
+        maximum *
+        100
+      ),
+      100
+    );
+
+  return `
+    <div class="occupancy-block">
+      <div class="occupancy-heading">
+        <span>
+          ${used} von ${maximum} belegt
+        </span>
+
+        <strong>
+          ${free > 0
+            ? free + ' frei'
+            : 'Voll'}
+        </strong>
+      </div>
+
+      <div class="progress-track">
+        <span
+          style="width:${percent}%"
+        ></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderDateBadge(
+  date,
+  fallback
+) {
+  if (!date) {
+    return `
+      <div class="event-date-large is-text-date">
+        <strong>
+          ${escapeHtml(
+            fallback ||
+            'Ohne Datum'
+          )}
+        </strong>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="event-date-large">
+      <span>
+        ${escapeHtml(
+          date.weekday
+        )}
+      </span>
+
+      <strong>
+        ${escapeHtml(
+          date.day
+        )}
+      </strong>
+
+      <span>
+        ${escapeHtml(
+          date.month
+        )}
+        ${escapeHtml(
+          date.year
+        )}
+      </span>
+    </div>
+  `;
+}
+
+function parseGermanDate(value) {
+  const match =
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(
+      String(value || '')
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const date =
+    new Date(
+      Number(match[3]),
+      Number(match[2]) - 1,
+      Number(match[1])
+    );
+
+  return {
+    day:
+      String(match[1])
+        .padStart(
+          2,
+          '0'
+        ),
+    month:
+      date.toLocaleDateString(
+        'de-DE',
+        {
+          month:
+            'short'
+        }
+      ).replace('.', ''),
+    year:
+      match[3],
+    weekday:
+      date.toLocaleDateString(
+        'de-DE',
+        {
+          weekday:
+            'long'
+        }
+      )
+  };
+}
+
+function compareEvents(a, b) {
+  return (
+    dateSortValue(
+      a.startdatum
+    ) -
+    dateSortValue(
+      b.startdatum
+    )
+  );
+}
+
+function compareLists(a, b) {
+  const dateDifference =
+    dateSortValue(
+      a.datum
+    ) -
+    dateSortValue(
+      b.datum
+    );
+
+  if (dateDifference) {
+    return dateDifference;
+  }
+
+  return (
+    timeSortValue(
+      a.beginn
+    ) -
+    timeSortValue(
+      b.beginn
+    )
+  );
+}
+
+function dateSortValue(value) {
+  const parsed =
+    parseGermanDate(value);
+
+  if (!parsed) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  return new Date(
+    Number(parsed.year),
+    [
+      'Jan',
+      'Feb',
+      'Mär',
+      'Apr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Dez'
+    ].indexOf(parsed.month),
+    Number(parsed.day)
+  ).getTime();
+}
+
+function timeSortValue(value) {
+  const match =
+    /^(\d{2}):(\d{2})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? Number(match[1]) *
+        60 +
+        Number(match[2])
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function countLists(events) {
+  return events.reduce(
+    (sum, event) =>
+      sum +
+      event.listen.length,
+    0
+  );
+}
+
+function countFreePlaces(events) {
+  return events.reduce(
+    (sum, event) =>
+      sum +
+      event.listen.reduce(
+        (listSum, list) =>
+          listSum +
+          (
+            Number.isFinite(
+              Number(list.frei)
+            )
+              ? Number(list.frei)
+              : 0
+          ),
+        0
+      ),
+    0
+  );
+}
+
+function summaryPill(
+  value,
+  label
+) {
+  return `
+    <div>
+      <strong>
+        ${escapeHtml(value)}
+      </strong>
+
+      <span>
+        ${escapeHtml(label)}
+      </span>
+    </div>
+  `;
+}
+
+function metaItem(
+  label,
+  value
+) {
+  return `
+    <div class="meta-item">
+      <span>
+        ${escapeHtml(label)}
+      </span>
+
+      <strong>
+        ${escapeHtml(value)}
+      </strong>
+    </div>
+  `;
+}
+
+function statusBadge(status) {
+  const open =
+    String(status)
+      .toLowerCase() ===
+    'offen';
+
+  return `
+    <span class="status-badge ${
+      open
+        ? 'is-open'
+        : 'is-closed'
+    }">
+      ${escapeHtml(
+        status ||
+        'offen'
+      )}
+    </span>
+  `;
+}
+
+function normalizeTypeLabel(value) {
+  const text =
+    String(value || '')
+      .trim();
+
+  return text ||
+    'Einsatz';
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .trim()
+    .toLocaleLowerCase(
+      'de-DE'
+    );
+}
+
+function getInitials(name) {
+  return String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part =>
+      part.charAt(0)
+        .toUpperCase()
+    )
+    .join('') ||
+    '?';
+}
+
+function hexToRgba(
+  hex,
+  alpha
+) {
+  const value =
+    String(hex || '')
+      .replace('#', '');
+
+  if (
+    !/^[0-9A-Fa-f]{6}$/.test(
+      value
+    )
+  ) {
+    return `rgba(84,110,122,${alpha})`;
+  }
+
+  return `rgba(${parseInt(value.slice(0, 2), 16)},${parseInt(value.slice(2, 4), 16)},${parseInt(value.slice(4, 6), 16)},${alpha})`;
 }
 
 function showToast(
   contentElement,
-  message,
-  type
+  message
 ) {
   const root =
     contentElement.querySelector(
-      '#eventsToastRoot'
+      '#overviewToastRoot'
     );
 
   if (!root) {
@@ -943,329 +1380,48 @@ function showToast(
     document.createElement('div');
 
   toast.className =
-    'toast toast-' + type;
+    'toast toast-success';
 
-  toast.textContent = message;
+  toast.textContent =
+    message;
 
-  root.appendChild(toast);
+  root.appendChild(
+    toast
+  );
 
-  window.setTimeout(
+  setTimeout(
     () => toast.remove(),
-    4200
+    3500
   );
-}
-
-function getOccupancy(list) {
-  const used =
-    getEntriesForList(list.id).length;
-
-  const maximum =
-    Number(list.anzahl || 0);
-
-  const hasLimit =
-    Number.isFinite(maximum) &&
-    maximum > 0;
-
-  const free =
-    hasLimit
-      ? Math.max(maximum - used, 0)
-      : Infinity;
-
-  return {
-    used,
-    maximum:
-      hasLimit
-        ? maximum
-        : 0,
-    free,
-    percent:
-      hasLimit
-        ? Math.min(
-            Math.round(
-              used / maximum * 100
-            ),
-            100
-          )
-        : 0,
-    isAvailable:
-      !hasLimit ||
-      free > 0
-  };
-}
-
-function getEntriesForList(listId) {
-  return moduleState.entries
-    .filter(entry =>
-      String(entry.listenId) ===
-      String(listId)
-    )
-    .sort((a, b) =>
-      String(a.name || '')
-        .localeCompare(
-          String(b.name || ''),
-          'de'
-        )
-    );
-}
-
-function getCategory(name) {
-  return moduleState.categories
-    .find(category =>
-      category.bezeichnung === name
-    ) || {
-      bezeichnung:
-        name || 'Sonstiges',
-      farbe:
-        '#546E7A',
-      icon:
-        'circle'
-    };
-}
-
-function countVisibleLists(events) {
-  return events.reduce(
-    (sum, event) =>
-      sum +
-      getVisibleListsForEvent(
-        event.id
-      ).length,
-    0
-  );
-}
-
-function countAvailablePlaces(events) {
-  return events.reduce(
-    (sum, event) =>
-      sum +
-      getVisibleListsForEvent(event.id)
-        .reduce(
-          (listSum, list) => {
-            const occupancy =
-              getOccupancy(list);
-
-            if (
-              occupancy.maximum <= 0 ||
-              !Number.isFinite(
-                occupancy.free
-              )
-            ) {
-              return listSum;
-            }
-
-            return (
-              listSum +
-              occupancy.free
-            );
-          },
-          0
-        ),
-    0
-  );
-}
-
-function normalizeListType(value) {
-  const type =
-    normalizeText(value)
-      .replace(/\s+/g, '-');
-
-  if (
-    type.includes('kuchen') ||
-    type.includes('sachspende') ||
-    type.includes('mitbring')
-  ) {
-    return {
-      label:
-        type.includes('kuchen')
-          ? 'Kuchenliste'
-          : 'Beitragsliste',
-      needsContribution:
-        true,
-      contributionPlaceholder:
-        type.includes('kuchen')
-          ? 'Zum Beispiel Apfelkuchen'
-          : 'Was bringst du mit?'
-    };
-  }
-
-  if (type.includes('schicht')) {
-    return {
-      label:
-        'Schicht',
-      needsContribution:
-        false,
-      contributionPlaceholder:
-        ''
-    };
-  }
-
-  return {
-    label:
-      'Helfereinsatz',
-    needsContribution:
-      false,
-    contributionPlaceholder:
-      ''
-  };
-}
-
-function pointsMarkup(list) {
-  if (
-    moduleState.settings.punkteAktiv !==
-      true ||
-    list.punkte === '' ||
-    list.punkte === null ||
-    list.punkte === undefined
-  ) {
-    return '';
-  }
-
-  const label =
-    moduleState.settings.punkteBezeichnung ||
-    'Punkte';
-
-  return metaItem(
-    label,
-    String(list.punkte)
-  );
-}
-
-function metaItem(label, value) {
-  return `
-    <div class="meta-item">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </div>
-  `;
-}
-
-function formatEventDate(event) {
-  if (
-    event.startdatum &&
-    event.enddatum &&
-    event.enddatum !== event.startdatum
-  ) {
-    return (
-      event.startdatum +
-      ' – ' +
-      event.enddatum
-    );
-  }
-
-  return (
-    event.startdatum ||
-    'Ohne Datum'
-  );
-}
-
-function getInitials(name) {
-  return String(name || '?')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map(part =>
-      part.charAt(0).toUpperCase()
-    )
-    .join('') || '?';
-}
-
-function normalizeText(value) {
-  return String(value || '')
-    .trim()
-    .toLocaleLowerCase('de-DE');
-}
-
-function hexToRgba(hex, alpha) {
-  const normalized =
-    String(hex || '')
-      .replace('#', '');
-
-  if (
-    !/^[0-9A-Fa-f]{6}$/.test(
-      normalized
-    )
-  ) {
-    return `rgba(84,110,122,${alpha})`;
-  }
-
-  const red =
-    parseInt(
-      normalized.substring(0, 2),
-      16
-    );
-
-  const green =
-    parseInt(
-      normalized.substring(2, 4),
-      16
-    );
-
-  const blue =
-    parseInt(
-      normalized.substring(4, 6),
-      16
-    );
-
-  return `rgba(${red},${green},${blue},${alpha})`;
 }
 
 function createLoadingMarkup() {
   return `
-    <section class="events-loading">
-      <div class="panel-card">
-        <div class="skeleton skeleton-title"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton skeleton-short"></div>
-      </div>
-      <div class="panel-card">
-        <div class="skeleton skeleton-title"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
+    <section class="info-banner">
+      <span class="info-banner-icon">i</span>
+      <div>
+        <strong>Daten werden geladen.</strong>
+        <span>
+          Dies kann einen kleinen Moment dauern.
+        </span>
       </div>
     </section>
-  `;
-}
 
-function renderModuleError(
-  contentElement,
-  error,
-  retry
-) {
-  contentElement.innerHTML = `
-    <section class="error-card" role="alert">
-      <span class="eyebrow">Einsätze</span>
-      <h2>Die Einsätze konnten nicht geladen werden</h2>
-      <p>${escapeHtml(
-        error && error.message
-          ? error.message
-          : 'Unbekannter Fehler'
-      )}</p>
-      <button
-        type="button"
-        class="button button-primary"
-        id="eventsRetryButton"
-      >
-        Erneut versuchen
-      </button>
+    <section class="panel-card">
+      <div class="skeleton skeleton-title"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton skeleton-short"></div>
     </section>
   `;
-
-  contentElement
-    .querySelector(
-      '#eventsRetryButton'
-    )
-    .addEventListener(
-      'click',
-      retry
-    );
 }
 
 function renderNoResults() {
   return `
     <div class="empty-state compact-empty-state">
-      <div class="empty-icon" aria-hidden="true">⌕</div>
-      <h2>Keine passenden Einsätze</h2>
+      <div class="empty-icon">⌕</div>
+      <h2>Keine passenden Einträge</h2>
       <p>
-        Ändere die Suche oder die ausgewählten Filter.
+        Ändere die Suche oder die Filter.
       </p>
     </div>
   `;
