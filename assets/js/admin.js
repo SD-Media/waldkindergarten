@@ -31,7 +31,10 @@ import {
 
 const adminState = {
   session: null,
-  refreshTimer: null
+  refreshTimer: null,
+  pointsVisible: false,
+  pointsSort:
+    'name-asc'
 };
 
 export async function renderAdminPage(
@@ -271,6 +274,20 @@ function renderAdminDashboard(
     </section>
 
     <section class="admin-primary-actions">
+      ${data.punkte &&
+        data.punkte.konfiguration &&
+        data.punkte.konfiguration.punkteAktiv === true
+          ? `
+            <button
+              type="button"
+              class="button button-secondary"
+              id="adminPointsOverviewButton"
+            >
+              Punkteübersicht aller Namen
+            </button>
+          `
+          : ''}
+
       <button
         type="button"
         class="button button-primary"
@@ -279,6 +296,10 @@ function renderAdminDashboard(
         + Veranstaltung anlegen
       </button>
     </section>
+
+    ${renderAdminPointsOverview(
+      data.punkte
+    )}
 
     <section class="admin-event-stack">
       ${events.length
@@ -665,6 +686,46 @@ function bindAdminActions(
         );
       }
     );
+
+  const pointsButton =
+    contentElement.querySelector(
+      '#adminPointsOverviewButton'
+    );
+
+  if (pointsButton) {
+    pointsButton.addEventListener(
+      'click',
+      () => {
+        adminState.pointsVisible =
+          !adminState.pointsVisible;
+
+        renderAdminDashboard(
+          contentElement,
+          options
+        );
+      }
+    );
+  }
+
+  const pointsSort =
+    contentElement.querySelector(
+      '#adminPointsSort'
+    );
+
+  if (pointsSort) {
+    pointsSort.addEventListener(
+      'change',
+      event => {
+        adminState.pointsSort =
+          event.target.value;
+
+        renderAdminDashboard(
+          contentElement,
+          options
+        );
+      }
+    );
+  }
 
   contentElement
     .querySelector(
@@ -2277,6 +2338,278 @@ function findList(listId) {
   }
 
   return null;
+}
+
+function renderAdminPointsOverview(
+  points
+) {
+  if (
+    !adminState.pointsVisible ||
+    !points ||
+    !points.konfiguration ||
+    points.konfiguration.punkteAktiv !==
+      true
+  ) {
+    return '';
+  }
+
+  const people =
+    sortAdminPointsPeople(
+      points.personen || [],
+      adminState.pointsSort
+    );
+
+  const label =
+    points.konfiguration
+      .punkteBezeichnung ||
+    'Punkte';
+
+  return `
+    <section class="admin-points-card">
+      <header class="admin-points-header">
+        <div>
+          <span class="eyebrow">
+            Aktuelles Vereinsjahr
+          </span>
+
+          <h2>
+            Punkteübersicht aller verwendeten Namen
+          </h2>
+
+          <p>
+            Die Übersicht entsteht ausschließlich aus den Namen,
+            die bei Eintragungen verwendet wurden.
+          </p>
+        </div>
+
+        <label class="filter-field admin-points-sort">
+          <span>Sortieren nach</span>
+
+          <select id="adminPointsSort">
+            ${adminSortOption(
+              'name-asc',
+              'Name A–Z'
+            )}
+
+            ${adminSortOption(
+              'name-desc',
+              'Name Z–A'
+            )}
+
+            ${adminSortOption(
+              'points-desc',
+              'Istpunkte – höchste zuerst'
+            )}
+
+            ${adminSortOption(
+              'points-asc',
+              'Istpunkte – niedrigste zuerst'
+            )}
+
+            ${adminSortOption(
+              'remaining-desc',
+              'Fehlende Punkte – höchste zuerst'
+            )}
+
+            ${adminSortOption(
+              'status-open',
+              'Offene zuerst'
+            )}
+          </select>
+        </label>
+      </header>
+
+      <div class="admin-points-summary">
+        ${adminOverviewItem(
+          people.length,
+          'Namen'
+        )}
+
+        ${adminOverviewItem(
+          formatAdminPointsNumber(
+            points.gesamtpunkte
+          ),
+          'Gesamtpunkte'
+        )}
+
+        ${adminOverviewItem(
+          people.filter(person =>
+            person.sollwertErreicht
+          ).length,
+          'Soll erfüllt'
+        )}
+      </div>
+
+      <div class="admin-points-table-wrap">
+        <table class="admin-points-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Soll</th>
+              <th>Ist</th>
+              <th>Fehlen</th>
+              <th>Eintragungen</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${people.length
+              ? people.map(person => `
+                  <tr>
+                    <td>
+                      <strong>
+                        ${escapeHtml(person.name)}
+                      </strong>
+                    </td>
+
+                    <td>
+                      ${formatAdminPointsNumber(
+                        person.sollwert
+                      )}
+                      ${escapeHtml(label)}
+                    </td>
+
+                    <td>
+                      <strong>
+                        ${formatAdminPointsNumber(
+                          person.punkte
+                        )}
+                      </strong>
+                      ${escapeHtml(label)}
+                    </td>
+
+                    <td>
+                      ${formatAdminPointsNumber(
+                        person.rest
+                      )}
+                      ${escapeHtml(label)}
+                    </td>
+
+                    <td>
+                      ${escapeHtml(
+                        person.anzahlEintragungen
+                      )}
+                    </td>
+
+                    <td>
+                      <span class="points-status ${
+                        person.sollwertErreicht
+                          ? 'is-reached'
+                          : 'is-open'
+                      }">
+                        ${person.sollwertErreicht
+                          ? 'Erfüllt'
+                          : 'Offen'}
+                      </span>
+                    </td>
+                  </tr>
+                `).join('')
+              : `
+                <tr>
+                  <td colspan="6">
+                    Noch keine Punkte-Eintragungen vorhanden.
+                  </td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function adminSortOption(
+  value,
+  label
+) {
+  return `
+    <option
+      value="${value}"
+      ${adminState.pointsSort === value
+        ? 'selected'
+        : ''}
+    >
+      ${label}
+    </option>
+  `;
+}
+
+function sortAdminPointsPeople(
+  people,
+  sort
+) {
+  const result =
+    people.slice();
+
+  switch (sort) {
+    case 'name-desc':
+      return result.sort(
+        (a, b) =>
+          String(b.name || '')
+            .localeCompare(
+              String(a.name || ''),
+              'de'
+            )
+      );
+
+    case 'points-desc':
+      return result.sort(
+        (a, b) =>
+          Number(b.punkte || 0) -
+          Number(a.punkte || 0)
+      );
+
+    case 'points-asc':
+      return result.sort(
+        (a, b) =>
+          Number(a.punkte || 0) -
+          Number(b.punkte || 0)
+      );
+
+    case 'remaining-desc':
+      return result.sort(
+        (a, b) =>
+          Number(b.rest || 0) -
+          Number(a.rest || 0)
+      );
+
+    case 'status-open':
+      return result.sort(
+        (a, b) =>
+          Number(a.sollwertErreicht) -
+          Number(b.sollwertErreicht) ||
+          String(a.name || '')
+            .localeCompare(
+              String(b.name || ''),
+              'de'
+            )
+      );
+
+    case 'name-asc':
+    default:
+      return result.sort(
+        (a, b) =>
+          String(a.name || '')
+            .localeCompare(
+              String(b.name || ''),
+              'de'
+            )
+      );
+  }
+}
+
+function formatAdminPointsNumber(
+  value
+) {
+  return Number(value || 0)
+    .toLocaleString(
+      'de-DE',
+      {
+        maximumFractionDigits:
+          2
+      }
+    );
 }
 
 function calculateAdminTotals(events) {
