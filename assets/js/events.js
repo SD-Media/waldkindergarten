@@ -9,7 +9,10 @@ import {
 import {
   getStoreSnapshot,
   refreshStore,
-  getAllEvents
+  getAllEvents,
+  createStoreBackup,
+  restoreStoreBackup,
+  addEntryOptimistic
 } from './store.js';
 
 const viewState = {
@@ -448,14 +451,6 @@ function renderList(
               category.bezeichnung
             )}
           </span>
-
-          <span class="type-label">
-            ${escapeHtml(
-              normalizeTypeLabel(
-                list.typ
-              )
-            )}
-          </span>
         </div>
 
         <h3>
@@ -564,46 +559,56 @@ function renderList(
 }
 
 function renderPublicEntry(entry) {
+  const details = [];
+
+  if (entry.beitrag) {
+    details.push(
+      String(
+        entry.beitrag
+      )
+    );
+  }
+
+  if (
+    entry.menge !== '' &&
+    entry.menge !== null &&
+    entry.menge !== undefined
+  ) {
+    details.push(
+      'Menge: ' +
+      String(
+        entry.menge
+      )
+    );
+  }
+
+  if (entry.bemerkung) {
+    details.push(
+      String(
+        entry.bemerkung
+      )
+    );
+  }
+
   return `
-    <div class="entry-person">
-      <span class="entry-avatar">
-        ${escapeHtml(
-          getInitials(
-            entry.name
-          )
-        )}
-      </span>
+    <div class="entry-chip">
+      <strong>
+        ${escapeHtml(entry.name)}
+      </strong>
 
-      <div>
-        <strong>
-          ${escapeHtml(entry.name)}
-        </strong>
-
-        ${entry.beitrag
-          ? `
-            <span>
-              ${escapeHtml(entry.beitrag)}
-              ${entry.menge !== '' &&
-                entry.menge !== null &&
-                entry.menge !== undefined
-                ? ' · Menge: ' +
-                  escapeHtml(entry.menge)
-                : ''}
-            </span>
-          `
-          : ''}
-
-        ${entry.bemerkung
-          ? `
-            <span class="entry-remark">
-              ${escapeHtml(entry.bemerkung)}
-            </span>
-          `
-          : ''}
-      </div>
+      ${details.length
+        ? `
+          <span>
+            ${escapeHtml(
+              details.join(' · ')
+            )}
+          </span>
+        `
+        : ''}
     </div>
   `;
 }
+
 
 function bindFilters(
   contentElement,
@@ -924,73 +929,114 @@ function openEntryDialog(
       errorBox.hidden =
         true;
 
-      try {
-        const data =
-          new FormData(form);
+      const data =
+        new FormData(form);
 
+      const payload = {
+        listenId:
+          list.id,
+        name:
+          String(
+            data.get('name') ||
+            ''
+          ).trim(),
+        beitrag:
+          String(
+            data.get('beitrag') ||
+            ''
+          ).trim(),
+        menge:
+          data.get('menge')
+            ? Number(
+                data.get('menge')
+              )
+            : '',
+        bemerkung:
+          String(
+            data.get('bemerkung') ||
+            ''
+          ).trim()
+      };
+
+      const backup =
+        createStoreBackup();
+
+      const temporaryId =
+        'TEMP_ENTRY_' +
+        Date.now();
+
+      addEntryOptimistic(
+        list.id,
+        {
+          id:
+            temporaryId,
+          listenId:
+            list.id,
+          name:
+            payload.name,
+          beitrag:
+            payload.beitrag,
+          menge:
+            payload.menge,
+          bemerkung:
+            payload.bemerkung,
+          erstelltAm:
+            '',
+          aktualisiertAm:
+            ''
+        }
+      );
+
+      dirty =
+        false;
+
+      root.innerHTML =
+        '';
+
+      renderOverview(
+        contentElement,
+        options
+      );
+
+      try {
         await apiPost(
           'createentry',
           {
-            data: {
-              listenId:
-                list.id,
-              name:
-                String(
-                  data.get('name') ||
-                  ''
-                ).trim(),
-              beitrag:
-                String(
-                  data.get('beitrag') ||
-                  ''
-                ).trim(),
-              menge:
-                data.get('menge')
-                  ? Number(
-                      data.get('menge')
-                    )
-                  : '',
-              bemerkung:
-                String(
-                  data.get('bemerkung') ||
-                  ''
-                ).trim()
-            }
+            data:
+              payload
           }
         );
 
-        dirty =
-          false;
-
-        root.innerHTML =
-          '';
-
-        await refreshStore();
-
-        showToast(
-          contentElement,
-          'Eintragung erfolgreich gespeichert.'
+        refreshStore()
+          .then(() =>
+            renderOverview(
+              contentElement,
+              options
+            )
+          )
+          .catch(
+            error =>
+              console.warn(
+                'Hintergrundaktualisierung fehlgeschlagen.',
+                error
+              )
+          );
+      } catch (error) {
+        restoreStoreBackup(
+          backup
         );
 
         renderOverview(
           contentElement,
           options
         );
-      } catch (error) {
-        errorBox.textContent =
+
+        window.alert(
           error &&
           error.message
             ? error.message
-            : 'Die Eintragung konnte nicht gespeichert werden.';
-
-        errorBox.hidden =
-          false;
-
-        button.disabled =
-          false;
-
-        button.textContent =
-          'Eintragung speichern';
+            : 'Die Eintragung konnte nicht gespeichert werden.'
+        );
       }
     }
   );
