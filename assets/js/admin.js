@@ -1,9 +1,8 @@
 /**
- * Vereinsverwaltung – Adminbereich
+ * Vereinsverwaltung – Administration
  */
 
 import {
-  apiGet,
   apiPost
 } from './api.js';
 
@@ -15,37 +14,29 @@ import {
   logout
 } from './auth.js';
 
+import {
+  getStoreSnapshot,
+  refreshStore,
+  getAllEvents
+} from './store.js';
+
 const adminState = {
-  authenticated: false,
   session: null,
-  events: [],
-  lists: [],
-  categories: [],
-  loading: false,
   refreshTimer: null
 };
 
-/**
- * Rendert den Adminbereich.
- *
- * @param {Object} options
- */
-export async function renderAdminPage(options) {
+export async function renderAdminPage(
+  options
+) {
   const {
     contentElement,
-    setPageHeading,
-    categories = []
+    setPageHeading
   } = options;
 
   setPageHeading(
     'Administration',
-    'Veranstaltungen, Einsätze und Kategorien verwalten'
+    'Veranstaltungen, Einsätze und Eintragungen verwalten'
   );
-
-  adminState.categories =
-    Array.isArray(categories)
-      ? categories
-      : [];
 
   contentElement.innerHTML =
     createAdminLoadingMarkup();
@@ -55,22 +46,21 @@ export async function renderAdminPage(options) {
 
   if (!session) {
     stopSessionRefresh();
+
     renderLogin(
       contentElement,
       options
     );
+
     return;
   }
-
-  adminState.authenticated =
-    true;
 
   adminState.session =
     session;
 
   startSessionRefresh();
 
-  await renderAdminDashboard(
+  renderAdminDashboard(
     contentElement,
     options
   );
@@ -80,13 +70,10 @@ function renderLogin(
   contentElement,
   options
 ) {
-  adminState.authenticated =
-    false;
-
   contentElement.innerHTML = `
     <section class="admin-login-shell">
       <article class="admin-login-card">
-        <div class="admin-login-icon" aria-hidden="true">⚙</div>
+        <div class="admin-login-icon">⚙</div>
 
         <span class="eyebrow">
           Geschützter Bereich
@@ -98,9 +85,13 @@ function renderLogin(
           Verwende das gemeinsame Adminpasswort der Einrichtung.
         </p>
 
-        <form id="adminLoginForm" class="admin-login-form">
+        <form
+          id="adminLoginForm"
+          class="admin-login-form"
+        >
           <label class="form-field">
             <span>Adminpasswort</span>
+
             <input
               name="password"
               type="password"
@@ -140,7 +131,7 @@ function renderLogin(
     async event => {
       event.preventDefault();
 
-      const submitButton =
+      const button =
         form.querySelector(
           '[type="submit"]'
         );
@@ -150,254 +141,504 @@ function renderLogin(
           '#adminLoginError'
         );
 
-      submitButton.disabled =
+      button.disabled =
         true;
 
-      submitButton.textContent =
+      button.textContent =
         'Anmeldung läuft …';
 
       errorBox.hidden =
         true;
 
       try {
-        const result =
+        adminState.session =
           await login(
             form.elements.password.value
           );
 
-        adminState.authenticated =
-          true;
-
-        adminState.session =
-          result;
-
         startSessionRefresh();
 
-        await renderAdminDashboard(
+        renderAdminDashboard(
           contentElement,
           options
         );
       } catch (error) {
         errorBox.textContent =
-          error && error.message
+          error &&
+          error.message
             ? error.message
             : 'Die Anmeldung ist fehlgeschlagen.';
 
         errorBox.hidden =
           false;
 
-        submitButton.disabled =
+        button.disabled =
           false;
 
-        submitButton.textContent =
+        button.textContent =
           'Anmelden';
       }
     }
   );
 }
 
-async function renderAdminDashboard(
+function renderAdminDashboard(
   contentElement,
   options
 ) {
-  contentElement.innerHTML =
-    createAdminLoadingMarkup();
+  const snapshot =
+    getStoreSnapshot();
 
-  try {
-    const [
-      events,
-      lists,
-      categories
-    ] = await Promise.all([
-      apiGet('events'),
-      apiGet('lists'),
-      apiGet('categories')
-    ]);
+  const data =
+    snapshot.frontendData;
 
-    adminState.events =
-      Array.isArray(events)
-        ? events
-        : [];
+  if (!data) {
+    contentElement.innerHTML =
+      createAdminLoadingMarkup();
 
-    adminState.lists =
-      Array.isArray(lists)
-        ? lists
-        : [];
+    return;
+  }
 
-    adminState.categories =
-      Array.isArray(categories)
-        ? categories
-        : [];
+  const events =
+    getAllEvents()
+      .sort(compareEvents);
 
-    contentElement.innerHTML = `
-      <section class="admin-header-card">
-        <div>
-          <span class="eyebrow">
-            Adminbereich
-          </span>
+  const categories =
+    snapshot.categories || [];
 
-          <h2>
-            ${escapeHtml(
-              adminState.session &&
-              adminState.session.einrichtungsname
-                ? adminState.session.einrichtungsname
-                : 'Einrichtung'
-            )}
-          </h2>
+  const totals =
+    calculateAdminTotals(
+      events
+    );
 
-          <p>
-            Veranstaltungen und Einsätze direkt verwalten.
-          </p>
+  contentElement.innerHTML = `
+    <section class="admin-hero">
+      <div>
+        <span class="eyebrow">
+          Adminbereich
+        </span>
+
+        <h2>
+          ${escapeHtml(
+            adminState.session &&
+            adminState.session.einrichtungsname
+              ? adminState.session.einrichtungsname
+              : data.einrichtungsname
+          )}
+        </h2>
+
+        <p>
+          Lege zuerst eine Veranstaltung mit den Grunddaten an.
+          Anschließend kannst du dieser Veranstaltung Helfereinsätze,
+          Schichten, Kuchenlisten, Sachspenden oder weitere Listen zuordnen.
+        </p>
+      </div>
+
+      <div class="admin-hero-side">
+        <div class="admin-overview-box">
+          ${adminOverviewItem(
+            events.length,
+            'Veranstaltungen'
+          )}
+
+          ${adminOverviewItem(
+            totals.lists,
+            'Einsätze / Listen'
+          )}
+
+          ${adminOverviewItem(
+            categories.length,
+            'Kategorien'
+          )}
         </div>
 
         <button
           type="button"
-          class="button button-secondary"
+          class="button admin-logout-button"
           id="adminLogoutButton"
         >
           Abmelden
         </button>
-      </section>
+      </div>
+    </section>
 
-      <section class="admin-metric-grid">
-        ${adminMetric(
-          'Veranstaltungen',
-          adminState.events.length
-        )}
-        ${adminMetric(
-          'Listen und Einsätze',
-          adminState.lists.length
-        )}
-        ${adminMetric(
-          'Kategorien',
-          adminState.categories.length
-        )}
-      </section>
+    <section class="admin-primary-actions">
+      <button
+        type="button"
+        class="button button-primary"
+        id="createEventButton"
+      >
+        + Veranstaltung anlegen
+      </button>
+    </section>
 
-      <section class="admin-action-grid">
-        <button
-          type="button"
-          class="admin-action-card"
-          id="createEventButton"
-        >
-          <span class="admin-action-icon">＋</span>
-          <strong>Veranstaltung anlegen</strong>
-          <span>
-            Termin, Titel und Status erfassen
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="admin-action-card"
-          id="createListButton"
-          ${adminState.events.length
-            ? ''
-            : 'disabled'}
-        >
-          <span class="admin-action-icon">≡</span>
-          <strong>Einsatz oder Liste anlegen</strong>
-          <span>
-            Aufgabe einer Veranstaltung zuordnen
-          </span>
-        </button>
-      </section>
-
-      <section class="admin-content-grid">
-        <article class="panel-card">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">
-                Veranstaltungen
-              </span>
-              <h3>Aktueller Bestand</h3>
-            </div>
+    <section class="admin-event-stack">
+      ${events.length
+        ? events
+            .map(event =>
+              renderAdminEventCard(
+                event,
+                categories,
+                data.einstellungen || {}
+              )
+            )
+            .join('')
+        : `
+          <div class="empty-state compact-empty-state">
+            <div class="empty-icon">＋</div>
+            <h2>Noch keine Veranstaltung</h2>
+            <p>
+              Lege zuerst eine Veranstaltung an.
+            </p>
           </div>
+        `}
+    </section>
 
-          <div class="admin-record-list">
-            ${adminState.events.length
-              ? adminState.events
-                  .map(event =>
-                    renderAdminEvent(event)
-                  )
-                  .join('')
-              : `
-                <div class="admin-empty-note">
-                  Noch keine Veranstaltung vorhanden.
-                </div>
-              `}
-          </div>
-        </article>
+    <div id="adminDialogRoot"></div>
+    <div id="adminToastRoot" class="toast-root"></div>
+  `;
 
-        <article class="panel-card">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">
-                Einsätze und Listen
-              </span>
-              <h3>Aktueller Bestand</h3>
-            </div>
-          </div>
-
-          <div class="admin-record-list">
-            ${adminState.lists.length
-              ? adminState.lists
-                  .map(list =>
-                    renderAdminList(list)
-                  )
-                  .join('')
-              : `
-                <div class="admin-empty-note">
-                  Noch keine Liste oder kein Einsatz vorhanden.
-                </div>
-              `}
-          </div>
-        </article>
-      </section>
-
-      <div id="adminDialogRoot"></div>
-      <div id="adminToastRoot" class="toast-root"></div>
-    `;
-
-    bindAdminDashboard(
-      contentElement,
-      options
-    );
-  } catch (error) {
-    contentElement.innerHTML = `
-      <section class="error-card" role="alert">
-        <span class="eyebrow">Administration</span>
-        <h2>Die Verwaltungsdaten konnten nicht geladen werden</h2>
-        <p>${escapeHtml(
-          error && error.message
-            ? error.message
-            : 'Unbekannter Fehler'
-        )}</p>
-        <button
-          type="button"
-          class="button button-primary"
-          id="adminRetryButton"
-        >
-          Erneut versuchen
-        </button>
-      </section>
-    `;
-
-    contentElement
-      .querySelector(
-        '#adminRetryButton'
-      )
-      .addEventListener(
-        'click',
-        () => renderAdminDashboard(
-          contentElement,
-          options
-        )
-      );
-  }
+  bindAdminActions(
+    contentElement,
+    options
+  );
 }
 
-function bindAdminDashboard(
+function renderAdminEventCard(
+  event,
+  categories,
+  settings
+) {
+  const lists =
+    (event.listen || [])
+      .slice()
+      .sort(compareLists);
+
+  const totals =
+    calculateListTotals(
+      lists
+    );
+
+  return `
+    <article class="admin-event-card">
+      <header
+        class="admin-event-card-header"
+        data-admin-edit-event="${escapeHtml(event.id)}"
+        tabindex="0"
+        role="button"
+      >
+        <div class="admin-event-date">
+          ${escapeHtml(
+            event.startdatum ||
+            'Ohne Datum'
+          )}
+        </div>
+
+        <div class="admin-event-main">
+          <div class="admin-event-title-row">
+            <div>
+              <span class="event-kicker">
+                Veranstaltung
+              </span>
+
+              <h3>
+                ${escapeHtml(event.titel)}
+              </h3>
+            </div>
+
+            ${statusBadge(event.status)}
+          </div>
+
+          ${event.beschreibung
+            ? `
+              <p>
+                ${escapeHtml(event.beschreibung)}
+              </p>
+            `
+            : ''}
+
+          <div class="admin-event-meta">
+            ${event.verantwortlich
+              ? adminMeta(
+                  'Verantwortlich',
+                  event.verantwortlich
+                )
+              : ''}
+
+            ${adminMeta(
+              'Einsätze / Listen',
+              lists.length
+            )}
+
+            ${adminMeta(
+              'Plätze',
+              totals.places
+            )}
+
+            ${adminMeta(
+              'Belegt',
+              totals.occupied
+            )}
+
+            ${settings.punkteAktiv === true
+              ? adminMeta(
+                  settings.punkteBezeichnung ||
+                    'Punkte',
+                  totals.points
+                )
+              : ''}
+          </div>
+        </div>
+
+        <div
+          class="admin-card-actions"
+          onclick="event.stopPropagation()"
+        >
+          <button
+            type="button"
+            class="icon-action"
+            title="Veranstaltung kopieren"
+            data-admin-copy-event="${escapeHtml(event.id)}"
+          >
+            ⧉
+          </button>
+
+          <button
+            type="button"
+            class="icon-action danger"
+            title="Veranstaltung löschen"
+            data-admin-delete-event="${escapeHtml(event.id)}"
+          >
+            ×
+          </button>
+        </div>
+      </header>
+
+      <div class="admin-event-children">
+        <div class="admin-child-toolbar">
+          <strong>
+            Zugeordnete Einsätze und Listen
+          </strong>
+
+          <button
+            type="button"
+            class="button button-secondary"
+            data-admin-create-list="${escapeHtml(event.id)}"
+          >
+            + Einsatz oder Liste
+          </button>
+        </div>
+
+        ${lists.length
+          ? `
+            <div class="admin-child-list">
+              ${lists
+                .map(list =>
+                  renderAdminListRow(
+                    list,
+                    categories,
+                    settings
+                  )
+                )
+                .join('')}
+            </div>
+          `
+          : `
+            <div class="admin-empty-child">
+              Noch kein Einsatz und keine Liste angelegt.
+            </div>
+          `}
+      </div>
+    </article>
+  `;
+}
+
+function renderAdminListRow(
+  list,
+  categories,
+  settings
+) {
+  const category =
+    categories.find(item =>
+      item.bezeichnung ===
+      list.kategorie
+    ) || {
+      farbe:
+        '#546E7A'
+    };
+
+  const entries =
+    Array.isArray(
+      list.eintragungen
+    )
+      ? list.eintragungen
+      : [];
+
+  return `
+    <article class="admin-list-row">
+      <div
+        class="admin-list-click-area"
+        data-admin-edit-list="${escapeHtml(list.id)}"
+        tabindex="0"
+        role="button"
+      >
+        <span
+          class="admin-list-color"
+          style="background:${escapeHtml(category.farbe)}"
+        ></span>
+
+        <div class="admin-list-copy">
+          <div class="admin-list-title-line">
+            <strong>
+              ${escapeHtml(list.titel)}
+            </strong>
+
+            <span>
+              ${escapeHtml(
+                list.kategorie ||
+                list.typ ||
+                'Einsatz'
+              )}
+            </span>
+          </div>
+
+          <div class="admin-list-details">
+            ${list.datum
+              ? detailText(
+                  list.datum
+                )
+              : ''}
+
+            ${list.uhrzeit
+              ? detailText(
+                  list.uhrzeit +
+                  ' Uhr'
+                )
+              : ''}
+
+            ${detailText(
+              entries.length +
+              ' / ' +
+              (
+                Number(list.anzahl || 0) >
+                0
+                  ? Number(list.anzahl)
+                  : '∞'
+              ) +
+              ' belegt'
+            )}
+
+            ${settings.punkteAktiv === true
+              ? detailText(
+                  String(
+                    list.punkte ?? 0
+                  ) +
+                  ' ' +
+                  (
+                    settings.punkteBezeichnung ||
+                    'Punkte'
+                  )
+                )
+              : ''}
+
+            ${list.verantwortlich
+              ? detailText(
+                  'Verantwortlich: ' +
+                  list.verantwortlich
+                )
+              : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-list-actions">
+        <button
+          type="button"
+          class="icon-action"
+          title="Einsatz kopieren"
+          data-admin-copy-list="${escapeHtml(list.id)}"
+        >
+          ⧉
+        </button>
+
+        <button
+          type="button"
+          class="icon-action danger"
+          title="Einsatz löschen"
+          data-admin-delete-list="${escapeHtml(list.id)}"
+        >
+          ×
+        </button>
+      </div>
+
+      ${entries.length
+        ? `
+          <details class="admin-entry-management">
+            <summary>
+              Eintragungen verwalten
+              <span>
+                ${entries.length}
+              </span>
+            </summary>
+
+            <div class="admin-entry-management-list">
+              ${entries
+                .map(entry =>
+                  renderAdminEntry(entry)
+                )
+                .join('')}
+            </div>
+          </details>
+        `
+        : ''}
+    </article>
+  `;
+}
+
+function renderAdminEntry(entry) {
+  return `
+    <div class="admin-entry-row">
+      <div>
+        <strong>
+          ${escapeHtml(entry.name)}
+        </strong>
+
+        ${entry.beitrag
+          ? `
+            <span>
+              ${escapeHtml(entry.beitrag)}
+              ${entry.menge !== '' &&
+                entry.menge !== null &&
+                entry.menge !== undefined
+                ? ' · Menge: ' +
+                  escapeHtml(entry.menge)
+                : ''}
+            </span>
+          `
+          : ''}
+
+        ${entry.bemerkung
+          ? `
+            <span class="entry-remark">
+              ${escapeHtml(entry.bemerkung)}
+            </span>
+          `
+          : ''}
+      </div>
+
+      <button
+        type="button"
+        class="icon-action danger"
+        title="Eintragung löschen"
+        data-admin-delete-entry="${escapeHtml(entry.id)}"
+      >
+        ×
+      </button>
+    </div>
+  `;
+}
+
+function bindAdminActions(
   contentElement,
   options
 ) {
@@ -423,32 +664,165 @@ function bindAdminDashboard(
     )
     .addEventListener(
       'click',
-      () => openEventDialog(
-        contentElement,
-        options
-      )
+      () =>
+        openEventForm(
+          contentElement,
+          options,
+          null
+        )
     );
 
-  const listButton =
-    contentElement.querySelector(
-      '#createListButton'
-    );
+  bindClickable(
+    contentElement,
+    '[data-admin-edit-event]',
+    element => {
+      const event =
+        findEvent(
+          element.dataset.adminEditEvent
+        );
 
-  if (!listButton.disabled) {
-    listButton.addEventListener(
-      'click',
-      () => openListDialog(
-        contentElement,
-        options
-      )
-    );
-  }
+      if (event) {
+        openEventForm(
+          contentElement,
+          options,
+          event
+        );
+      }
+    }
+  );
+
+  bindClickable(
+    contentElement,
+    '[data-admin-edit-list]',
+    element => {
+      const result =
+        findList(
+          element.dataset.adminEditList
+        );
+
+      if (result) {
+        openListForm(
+          contentElement,
+          options,
+          result.event,
+          result.list
+        );
+      }
+    }
+  );
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-create-list]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () => {
+          const event =
+            findEvent(
+              button.dataset.adminCreateList
+            );
+
+          openListForm(
+            contentElement,
+            options,
+            event,
+            null
+          );
+        }
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-delete-entry]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          deleteEntry(
+            contentElement,
+            options,
+            button.dataset.adminDeleteEntry
+          )
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-delete-list]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          deleteList(
+            contentElement,
+            options,
+            button.dataset.adminDeleteList
+          )
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-delete-event]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          deleteEvent(
+            contentElement,
+            options,
+            button.dataset.adminDeleteEvent
+          )
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-copy-list]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          copyList(
+            contentElement,
+            options,
+            button.dataset.adminCopyList
+          )
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-copy-event]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          copyWholeEvent(
+            contentElement,
+            options,
+            button.dataset.adminCopyEvent
+          )
+      );
+    });
 }
 
-function openEventDialog(
+function openEventForm(
   contentElement,
-  options
+  options,
+  event
 ) {
+  const editing =
+    Boolean(event);
+
   const root =
     contentElement.querySelector(
       '#adminDialogRoot'
@@ -456,19 +830,19 @@ function openEventDialog(
 
   root.innerHTML = `
     <div class="dialog-backdrop">
-      <section
-        class="dialog-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="adminEventDialogTitle"
-      >
+      <section class="dialog-card">
         <header class="dialog-header">
           <div>
             <span class="eyebrow">
-              Neue Veranstaltung
+              ${editing
+                ? 'Veranstaltung bearbeiten'
+                : 'Neue Veranstaltung'}
             </span>
-            <h2 id="adminEventDialogTitle">
-              Veranstaltung anlegen
+
+            <h2>
+              ${editing
+                ? escapeHtml(event.titel)
+                : 'Veranstaltung anlegen'}
             </h2>
           </div>
 
@@ -476,7 +850,6 @@ function openEventDialog(
             type="button"
             class="icon-button"
             data-admin-dialog-close
-            aria-label="Dialog schließen"
           >
             ×
           </button>
@@ -488,61 +861,100 @@ function openEventDialog(
         >
           <label class="form-field">
             <span>Titel</span>
+
             <input
               name="titel"
               type="text"
-              maxlength="160"
               required
+              maxlength="160"
+              value="${editing
+                ? escapeHtml(event.titel)
+                : ''}"
             >
           </label>
 
           <label class="form-field">
             <span>Beschreibung <small>optional</small></span>
+
             <textarea
               name="beschreibung"
               rows="3"
               maxlength="1000"
-            ></textarea>
+            >${editing
+              ? escapeHtml(event.beschreibung)
+              : ''}</textarea>
           </label>
 
           <div class="form-grid-two">
             <label class="form-field">
               <span>Startdatum</span>
+
               <input
                 name="startdatum"
                 type="date"
                 required
+                value="${editing
+                  ? germanToIsoDate(
+                      event.startdatum
+                    )
+                  : ''}"
               >
             </label>
 
             <label class="form-field">
               <span>Enddatum <small>optional</small></span>
+
               <input
                 name="enddatum"
                 type="date"
+                value="${editing
+                  ? germanToIsoDate(
+                      event.enddatum
+                    )
+                  : ''}"
               >
             </label>
           </div>
 
-          <div class="form-grid-two">
-            <label class="form-field">
-              <span>Status</span>
-              <select name="status">
-                <option value="offen">Offen</option>
-                <option value="geschlossen">Geschlossen</option>
-              </select>
-            </label>
+          <label class="form-field">
+            <span>Verantwortliche <small>optional</small></span>
 
-            <label class="form-field">
-              <span>Sortierung</span>
-              <input
-                name="sortierung"
-                type="number"
-                step="1"
-                value="0"
+            <input
+              name="verantwortlich"
+              type="text"
+              maxlength="500"
+              value="${editing
+                ? escapeHtml(event.verantwortlich)
+                : ''}"
+              placeholder="Zum Beispiel Sabrina Dannenberger, Armin Müller"
+            >
+          </label>
+
+          <label class="form-field">
+            <span>Status</span>
+
+            <select name="status">
+              <option
+                value="offen"
+                ${!editing ||
+                  event.status === 'offen'
+                  ? 'selected'
+                  : ''}
               >
-            </label>
-          </div>
+                Offen
+              </option>
+
+              <option
+                value="geschlossen"
+                ${editing &&
+                  event.status === 'geschlossen'
+                  ? 'selected'
+                  : ''}
+              >
+                Geschlossen
+              </option>
+            </select>
+          </label>
 
           <div
             id="adminEventError"
@@ -563,7 +975,9 @@ function openEventDialog(
               type="submit"
               class="button button-primary"
             >
-              Veranstaltung speichern
+              ${editing
+                ? 'Änderungen speichern'
+                : 'Veranstaltung speichern'}
             </button>
           </div>
         </form>
@@ -571,19 +985,33 @@ function openEventDialog(
     </div>
   `;
 
-  bindDialogClose(root);
-
   const form =
     root.querySelector(
       '#adminEventForm'
     );
 
+  let dirty =
+    false;
+
+  form.addEventListener(
+    'input',
+    () => {
+      dirty =
+        true;
+    }
+  );
+
+  bindAdminSafeClose(
+    root,
+    () => dirty
+  );
+
   form.elements.titel.focus();
 
   form.addEventListener(
     'submit',
-    async event => {
-      event.preventDefault();
+    async submitEvent => {
+      submitEvent.preventDefault();
 
       const button =
         form.querySelector(
@@ -605,49 +1033,102 @@ function openEventDialog(
         true;
 
       try {
-        await apiPost(
-          'createevent',
-          {
-            data: {
-              titel:
-                form.elements.titel.value.trim(),
-              beschreibung:
-                form.elements.beschreibung.value.trim(),
-              startdatum:
-                toGermanDate(
-                  form.elements.startdatum.value
-                ),
-              enddatum:
-                form.elements.enddatum.value
-                  ? toGermanDate(
-                      form.elements.enddatum.value
-                    )
-                  : '',
-              status:
-                form.elements.status.value,
-              sortierung:
-                Number(
-                  form.elements.sortierung.value || 0
+        const payload = {
+          titel:
+            form.elements.titel.value.trim(),
+          beschreibung:
+            form.elements.beschreibung.value.trim(),
+          startdatum:
+            isoToGermanDate(
+              form.elements.startdatum.value
+            ),
+          enddatum:
+            form.elements.enddatum.value
+              ? isoToGermanDate(
+                  form.elements.enddatum.value
                 )
+              : '',
+          verantwortlich:
+            form.elements.verantwortlich.value.trim(),
+          status:
+            form.elements.status.value,
+          sortierung:
+            Number(
+              event &&
+              event.sortierung
+                ? event.sortierung
+                : 0
+            )
+        };
+
+        const saved =
+          await apiPost(
+            editing
+              ? 'updateevent'
+              : 'createevent',
+            editing
+              ? {
+                  id:
+                    event.id,
+                  data:
+                    payload
+                }
+              : {
+                  data:
+                    payload
+                },
+            getStoredToken()
+          );
+
+        dirty =
+          false;
+
+        root.innerHTML =
+          '';
+
+        await refreshStore();
+
+        if (!editing) {
+          const addNow =
+            window.confirm(
+              'Veranstaltung wurde angelegt. Jetzt direkt den ersten Einsatz oder eine Liste hinzufügen?'
+            );
+
+          renderAdminDashboard(
+            contentElement,
+            options
+          );
+
+          if (addNow) {
+            const newEvent =
+              findEvent(
+                saved.id
+              );
+
+            if (newEvent) {
+              openListForm(
+                contentElement,
+                options,
+                newEvent,
+                null
+              );
             }
-          },
-          getStoredToken()
-        );
+          }
+        } else {
+          showAdminToast(
+            contentElement,
+            'Veranstaltung aktualisiert.'
+          );
 
-        closeAdminDialog(root);
-
-        showAdminToast(
-          contentElement,
-          'Veranstaltung erfolgreich angelegt.'
-        );
-
-        await renderAdminDashboard(
-          contentElement,
-          options
-        );
+          renderAdminDashboard(
+            contentElement,
+            options
+          );
+        }
       } catch (error) {
         errorBox.textContent =
-          error && error.message
+          error &&
+          error.message
             ? error.message
             : 'Die Veranstaltung konnte nicht gespeichert werden.';
 
@@ -658,16 +1139,37 @@ function openEventDialog(
           false;
 
         button.textContent =
-          'Veranstaltung speichern';
+          editing
+            ? 'Änderungen speichern'
+            : 'Veranstaltung speichern';
       }
     }
   );
 }
 
-function openListDialog(
+function openListForm(
   contentElement,
-  options
+  options,
+  event,
+  list
 ) {
+  if (!event) {
+    return;
+  }
+
+  const editing =
+    Boolean(list);
+
+  const snapshot =
+    getStoreSnapshot();
+
+  const categories =
+    snapshot.categories || [];
+
+  const settings =
+    snapshot.frontendData
+      .einstellungen || {};
+
   const root =
     contentElement.querySelector(
       '#adminDialogRoot'
@@ -675,19 +1177,17 @@ function openListDialog(
 
   root.innerHTML = `
     <div class="dialog-backdrop">
-      <section
-        class="dialog-card"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="adminListDialogTitle"
-      >
+      <section class="dialog-card">
         <header class="dialog-header">
           <div>
             <span class="eyebrow">
-              Neuer Einsatz
+              ${escapeHtml(event.titel)}
             </span>
-            <h2 id="adminListDialogTitle">
-              Einsatz oder Liste anlegen
+
+            <h2>
+              ${editing
+                ? 'Einsatz oder Liste bearbeiten'
+                : 'Einsatz oder Liste anlegen'}
             </h2>
           </div>
 
@@ -695,7 +1195,6 @@ function openListDialog(
             type="button"
             class="icon-button"
             data-admin-dialog-close
-            aria-label="Dialog schließen"
           >
             ×
           </button>
@@ -705,47 +1204,48 @@ function openListDialog(
           id="adminListForm"
           class="dialog-form"
         >
-          <label class="form-field">
-            <span>Veranstaltung</span>
-            <select
-              name="veranstaltungId"
-              required
-            >
-              ${adminState.events
-                .map(event => `
-                  <option value="${escapeHtml(event.id)}">
-                    ${escapeHtml(event.titel)}
-                  </option>
-                `)
-                .join('')}
-            </select>
-          </label>
-
           <div class="form-grid-two">
             <label class="form-field">
               <span>Typ</span>
+
               <select name="typ">
-                <option value="Helfereinsatz">
-                  Helfereinsatz
-                </option>
-                <option value="Schicht">
-                  Schicht
-                </option>
-                <option value="Beitragsliste">
-                  Beitragsliste
-                </option>
-                <option value="Kuchenliste">
-                  Kuchenliste
-                </option>
+                ${[
+                  'Helfereinsatz',
+                  'Schicht',
+                  'Beitragsliste',
+                  'Kuchenliste',
+                  'Sachspendenliste'
+                ].map(type => `
+                  <option
+                    value="${type}"
+                    ${editing &&
+                      list.typ === type
+                      ? 'selected'
+                      : ''}
+                  >
+                    ${type}
+                  </option>
+                `).join('')}
               </select>
             </label>
 
             <label class="form-field">
               <span>Kategorie</span>
-              <select name="kategorie">
-                ${adminState.categories
+
+              <select
+                name="kategorie"
+                required
+              >
+                ${categories
                   .map(category => `
-                    <option value="${escapeHtml(category.bezeichnung)}">
+                    <option
+                      value="${escapeHtml(category.bezeichnung)}"
+                      ${editing &&
+                        list.kategorie ===
+                          category.bezeichnung
+                        ? 'selected'
+                        : ''}
+                    >
                       ${escapeHtml(category.bezeichnung)}
                     </option>
                   `)
@@ -756,84 +1256,152 @@ function openListDialog(
 
           <label class="form-field">
             <span>Titel</span>
+
             <input
               name="titel"
               type="text"
               maxlength="160"
               required
+              value="${editing
+                ? escapeHtml(list.titel)
+                : ''}"
             >
           </label>
 
           <label class="form-field">
             <span>Beschreibung <small>optional</small></span>
+
             <textarea
               name="beschreibung"
               rows="3"
               maxlength="1000"
-            ></textarea>
+            >${editing
+              ? escapeHtml(list.beschreibung)
+              : ''}</textarea>
           </label>
-
-          <div class="form-grid-two">
-            <label class="form-field">
-              <span>Datum</span>
-              <input
-                name="datum"
-                type="date"
-              >
-            </label>
-
-            <label class="form-field">
-              <span>Uhrzeit</span>
-              <input
-                name="uhrzeit"
-                type="text"
-                maxlength="80"
-                placeholder="Zum Beispiel 09:00 – 12:00"
-              >
-            </label>
-          </div>
 
           <div class="form-grid-three">
             <label class="form-field">
-              <span>Plätze</span>
+              <span>Datum</span>
+
               <input
-                name="anzahl"
-                type="number"
-                min="0"
-                step="1"
-                value="1"
+                name="datum"
+                type="date"
+                value="${editing
+                  ? germanToIsoDate(list.datum)
+                  : germanToIsoDate(
+                      event.startdatum
+                    )}"
               >
             </label>
 
             <label class="form-field">
-              <span>Punkte</span>
+              <span>Beginn</span>
+
               <input
-                name="punkte"
-                type="number"
-                min="0"
-                step="0.5"
-                value="0"
+                name="beginn"
+                type="time"
+                value="${editing
+                  ? escapeHtml(list.beginn)
+                  : ''}"
               >
             </label>
 
             <label class="form-field">
-              <span>Sortierung</span>
+              <span>Ende</span>
+
               <input
-                name="sortierung"
-                type="number"
-                step="1"
-                value="0"
+                name="ende"
+                type="time"
+                value="${editing
+                  ? escapeHtml(list.ende)
+                  : ''}"
               >
             </label>
           </div>
 
           <label class="form-field">
-            <span>Status</span>
-            <select name="status">
-              <option value="offen">Offen</option>
-              <option value="geschlossen">Geschlossen</option>
-            </select>
+            <span>Verantwortliche</span>
+
+            <input
+              name="verantwortlich"
+              type="text"
+              maxlength="500"
+              value="${editing
+                ? escapeHtml(list.verantwortlich)
+                : escapeHtml(event.verantwortlich)}"
+              placeholder="Wird von der Veranstaltung übernommen"
+            >
           </label>
+
+          <div class="${
+            settings.punkteAktiv === true
+              ? 'form-grid-three'
+              : 'form-grid-two'
+          }">
+            <label class="form-field">
+              <span>Plätze / benötigte Anzahl</span>
+
+              <input
+                name="anzahl"
+                type="number"
+                min="0"
+                step="1"
+                value="${editing
+                  ? escapeHtml(list.anzahl)
+                  : '1'}"
+              >
+            </label>
+
+            ${settings.punkteAktiv === true
+              ? `
+                <label class="form-field">
+                  <span>
+                    ${escapeHtml(
+                      settings.punkteBezeichnung ||
+                      'Punkte'
+                    )}
+                  </span>
+
+                  <input
+                    name="punkte"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value="${editing
+                      ? escapeHtml(list.punkte)
+                      : '0'}"
+                  >
+                </label>
+              `
+              : ''}
+
+            <label class="form-field">
+              <span>Status</span>
+
+              <select name="status">
+                <option
+                  value="offen"
+                  ${!editing ||
+                    list.status === 'offen'
+                    ? 'selected'
+                    : ''}
+                >
+                  Offen
+                </option>
+
+                <option
+                  value="geschlossen"
+                  ${editing &&
+                    list.status === 'geschlossen'
+                    ? 'selected'
+                    : ''}
+                >
+                  Geschlossen
+                </option>
+              </select>
+            </label>
+          </div>
 
           <div
             id="adminListError"
@@ -854,7 +1422,9 @@ function openListDialog(
               type="submit"
               class="button button-primary"
             >
-              Einsatz speichern
+              ${editing
+                ? 'Änderungen speichern'
+                : 'Einsatz speichern'}
             </button>
           </div>
         </form>
@@ -862,19 +1432,33 @@ function openListDialog(
     </div>
   `;
 
-  bindDialogClose(root);
-
   const form =
     root.querySelector(
       '#adminListForm'
     );
 
+  let dirty =
+    false;
+
+  form.addEventListener(
+    'input',
+    () => {
+      dirty =
+        true;
+    }
+  );
+
+  bindAdminSafeClose(
+    root,
+    () => dirty
+  );
+
   form.elements.titel.focus();
 
   form.addEventListener(
     'submit',
-    async event => {
-      event.preventDefault();
+    async submitEvent => {
+      submitEvent.preventDefault();
 
       const button =
         form.querySelector(
@@ -896,61 +1480,93 @@ function openListDialog(
         true;
 
       try {
-        await apiPost(
-          'createlist',
-          {
-            data: {
-              veranstaltungId:
-                form.elements.veranstaltungId.value,
-              typ:
-                form.elements.typ.value,
-              titel:
-                form.elements.titel.value.trim(),
-              beschreibung:
-                form.elements.beschreibung.value.trim(),
-              datum:
-                form.elements.datum.value
-                  ? toGermanDate(
-                      form.elements.datum.value
-                    )
-                  : '',
-              uhrzeit:
-                form.elements.uhrzeit.value.trim(),
-              kategorie:
-                form.elements.kategorie.value,
-              anzahl:
-                Number(
-                  form.elements.anzahl.value || 0
-                ),
-              punkte:
-                Number(
-                  form.elements.punkte.value || 0
-                ),
-              status:
-                form.elements.status.value,
-              sortierung:
-                Number(
-                  form.elements.sortierung.value || 0
+        const payload = {
+          veranstaltungId:
+            event.id,
+          typ:
+            form.elements.typ.value,
+          titel:
+            form.elements.titel.value.trim(),
+          beschreibung:
+            form.elements.beschreibung.value.trim(),
+          datum:
+            form.elements.datum.value
+              ? isoToGermanDate(
+                  form.elements.datum.value
                 )
-            }
-          },
+              : '',
+          beginn:
+            form.elements.beginn.value,
+          ende:
+            form.elements.ende.value,
+          verantwortlich:
+            form.elements.verantwortlich.value.trim(),
+          kategorie:
+            form.elements.kategorie.value,
+          anzahl:
+            Number(
+              form.elements.anzahl.value ||
+              0
+            ),
+          punkte:
+            settings.punkteAktiv === true
+              ? Number(
+                  form.elements.punkte.value ||
+                  0
+                )
+              : 0,
+          status:
+            form.elements.status.value,
+          sortierung:
+            Number(
+              editing &&
+              list.sortierung
+                ? list.sortierung
+                : 0
+            )
+        };
+
+        await apiPost(
+          editing
+            ? 'updatelist'
+            : 'createlist',
+          editing
+            ? {
+                id:
+                  list.id,
+                data:
+                  payload
+              }
+            : {
+                data:
+                  payload
+              },
           getStoredToken()
         );
 
-        closeAdminDialog(root);
+        dirty =
+          false;
+
+        root.innerHTML =
+          '';
+
+        await refreshStore();
 
         showAdminToast(
           contentElement,
-          'Einsatz erfolgreich angelegt.'
+          editing
+            ? 'Einsatz aktualisiert.'
+            : 'Einsatz erfolgreich angelegt.'
         );
 
-        await renderAdminDashboard(
+        renderAdminDashboard(
           contentElement,
           options
         );
       } catch (error) {
         errorBox.textContent =
-          error && error.message
+          error &&
+          error.message
             ? error.message
             : 'Der Einsatz konnte nicht gespeichert werden.';
 
@@ -961,75 +1577,354 @@ function openListDialog(
           false;
 
         button.textContent =
-          'Einsatz speichern';
+          editing
+            ? 'Änderungen speichern'
+            : 'Einsatz speichern';
       }
     }
   );
 }
 
-function renderAdminEvent(event) {
-  return `
-    <div class="admin-record">
-      <div>
-        <strong>${escapeHtml(event.titel)}</strong>
-        <span>
-          ${escapeHtml(
-            event.startdatum ||
-            'Ohne Datum'
-          )}
-        </span>
-      </div>
+async function deleteEntry(
+  contentElement,
+  options,
+  entryId
+) {
+  if (
+    !window.confirm(
+      'Diese Eintragung wirklich löschen?'
+    )
+  ) {
+    return;
+  }
 
-      <span class="status-badge ${
-        String(event.status).toLowerCase() ===
-          'offen'
-          ? 'is-open'
-          : 'is-closed'
-      }">
-        ${escapeHtml(event.status)}
-      </span>
-    </div>
-  `;
+  await runAdminMutation(
+    contentElement,
+    options,
+    () =>
+      apiPost(
+        'deleteentry',
+        {
+          id:
+            entryId
+        },
+        getStoredToken()
+      ),
+    'Eintragung gelöscht.'
+  );
 }
 
-function renderAdminList(list) {
+async function deleteList(
+  contentElement,
+  options,
+  listId
+) {
+  if (
+    !window.confirm(
+      'Diesen Einsatz beziehungsweise diese Liste wirklich löschen? Vorhandene Eintragungen müssen vorher entfernt werden.'
+    )
+  ) {
+    return;
+  }
+
+  await runAdminMutation(
+    contentElement,
+    options,
+    () =>
+      apiPost(
+        'deletelist',
+        {
+          id:
+            listId
+        },
+        getStoredToken()
+      ),
+    'Einsatz gelöscht.'
+  );
+}
+
+async function deleteEvent(
+  contentElement,
+  options,
+  eventId
+) {
+  if (
+    !window.confirm(
+      'Diese Veranstaltung wirklich löschen? Zugeordnete Einsätze und Eintragungen müssen vorher entfernt werden.'
+    )
+  ) {
+    return;
+  }
+
+  await runAdminMutation(
+    contentElement,
+    options,
+    () =>
+      apiPost(
+        'deleteevent',
+        {
+          id:
+            eventId
+        },
+        getStoredToken()
+      ),
+    'Veranstaltung gelöscht.'
+  );
+}
+
+async function copyList(
+  contentElement,
+  options,
+  listId
+) {
+  await runAdminMutation(
+    contentElement,
+    options,
+    () =>
+      apiPost(
+        'duplicatelist',
+        {
+          id:
+            listId
+        },
+        getStoredToken()
+      ),
+    'Einsatz kopiert.'
+  );
+}
+
+async function copyWholeEvent(
+  contentElement,
+  options,
+  eventId
+) {
   const event =
-    adminState.events.find(item =>
-      item.id ===
-      list.veranstaltungId
+    findEvent(
+      eventId
     );
 
-  return `
-    <div class="admin-record">
-      <div>
-        <strong>${escapeHtml(list.titel)}</strong>
-        <span>
-          ${escapeHtml(
-            event
-              ? event.titel
-              : 'Ohne Veranstaltung'
-          )}
-          ·
-          ${escapeHtml(
-            list.kategorie ||
-            'Ohne Kategorie'
-          )}
-        </span>
-      </div>
+  if (!event) {
+    return;
+  }
 
-      <span class="status-badge ${
-        String(list.status).toLowerCase() ===
-          'offen'
-          ? 'is-open'
-          : 'is-closed'
-      }">
-        ${escapeHtml(list.status)}
-      </span>
-    </div>
-  `;
+  const newTitle =
+    window.prompt(
+      'Titel der Kopie:',
+      event.titel +
+      ' – Kopie'
+    );
+
+  if (!newTitle) {
+    return;
+  }
+
+  const newDate =
+    window.prompt(
+      'Neues Startdatum im Format TT.MM.JJJJ:',
+      event.startdatum || ''
+    );
+
+  if (
+    newDate === null
+  ) {
+    return;
+  }
+
+  try {
+    const copiedEvent =
+      await apiPost(
+        'createevent',
+        {
+          data: {
+            titel:
+              newTitle.trim(),
+            beschreibung:
+              event.beschreibung || '',
+            startdatum:
+              newDate.trim(),
+            enddatum:
+              newDate.trim(),
+            verantwortlich:
+              event.verantwortlich || '',
+            status:
+              'offen',
+            sortierung:
+              0
+          }
+        },
+        getStoredToken()
+      );
+
+    for (
+      const list of
+      (
+        event.listen || []
+      )
+    ) {
+      await apiPost(
+        'createlist',
+        {
+          data: {
+            veranstaltungId:
+              copiedEvent.id,
+            typ:
+              list.typ,
+            titel:
+              list.titel,
+            beschreibung:
+              list.beschreibung || '',
+            datum:
+              shiftListDateForCopy(
+                list.datum,
+                event.startdatum,
+                newDate.trim()
+              ),
+            beginn:
+              list.beginn || '',
+            ende:
+              list.ende || '',
+            verantwortlich:
+              list.verantwortlich ||
+              event.verantwortlich ||
+              '',
+            kategorie:
+              list.kategorie || '',
+            anzahl:
+              Number(
+                list.anzahl || 0
+              ),
+            punkte:
+              Number(
+                list.punkte || 0
+              ),
+            status:
+              'offen',
+            sortierung:
+              Number(
+                list.sortierung || 0
+              )
+          }
+        },
+        getStoredToken()
+      );
+    }
+
+    await refreshStore();
+
+    showAdminToast(
+      contentElement,
+      'Veranstaltung einschließlich Einsätzen kopiert.'
+    );
+
+    renderAdminDashboard(
+      contentElement,
+      options
+    );
+  } catch (error) {
+    window.alert(
+      error &&
+      error.message
+        ? error.message
+        : 'Die Veranstaltung konnte nicht kopiert werden.'
+    );
+  }
 }
 
-function bindDialogClose(root) {
+function shiftListDateForCopy(
+  listDate,
+  oldEventDate,
+  newEventDate
+) {
+  if (
+    !listDate ||
+    !oldEventDate ||
+    !newEventDate
+  ) {
+    return (
+      listDate ||
+      newEventDate ||
+      ''
+    );
+  }
+
+  const list =
+    parseDateParts(
+      listDate
+    );
+
+  const oldEvent =
+    parseDateParts(
+      oldEventDate
+    );
+
+  const newEvent =
+    parseDateParts(
+      newEventDate
+    );
+
+  if (
+    !list ||
+    !oldEvent ||
+    !newEvent
+  ) {
+    return newEventDate;
+  }
+
+  const difference =
+    list.getTime() -
+    oldEvent.getTime();
+
+  const shifted =
+    new Date(
+      newEvent.getTime() +
+      difference
+    );
+
+  return [
+    String(
+      shifted.getDate()
+    ).padStart(2, '0'),
+    String(
+      shifted.getMonth() + 1
+    ).padStart(2, '0'),
+    shifted.getFullYear()
+  ].join('.');
+}
+
+async function runAdminMutation(
+  contentElement,
+  options,
+  mutation,
+  successMessage
+) {
+  try {
+    await mutation();
+
+    await refreshStore();
+
+    showAdminToast(
+      contentElement,
+      successMessage
+    );
+
+    renderAdminDashboard(
+      contentElement,
+      options
+    );
+  } catch (error) {
+    window.alert(
+      error &&
+      error.message
+        ? error.message
+        : 'Die Änderung konnte nicht gespeichert werden.'
+    );
+  }
+}
+
+function bindAdminSafeClose(
+  root,
+  isDirty
+) {
   root
     .querySelectorAll(
       '[data-admin-dialog-close]'
@@ -1037,42 +1932,295 @@ function bindDialogClose(root) {
     .forEach(button => {
       button.addEventListener(
         'click',
-        () => closeAdminDialog(root)
+        () => {
+          if (
+            isDirty() &&
+            !window.confirm(
+              'Ungespeicherte Eingaben verwerfen?'
+            )
+          ) {
+            return;
+          }
+
+          root.innerHTML =
+            '';
+        }
       );
     });
+}
 
-  const backdrop =
-    root.querySelector(
-      '.dialog-backdrop'
+function bindClickable(
+  root,
+  selector,
+  callback
+) {
+  root
+    .querySelectorAll(
+      selector
+    )
+    .forEach(element => {
+      element.addEventListener(
+        'click',
+        () =>
+          callback(element)
+      );
+
+      element.addEventListener(
+        'keydown',
+        event => {
+          if (
+            event.key ===
+              'Enter' ||
+            event.key ===
+              ' '
+          ) {
+            event.preventDefault();
+            callback(element);
+          }
+        }
+      );
+    });
+}
+
+function findEvent(eventId) {
+  return getAllEvents()
+    .find(event =>
+      event.id ===
+      eventId
     );
+}
 
-  backdrop.addEventListener(
-    'click',
-    event => {
-      if (
-        event.target ===
-        backdrop
-      ) {
-        closeAdminDialog(root);
-      }
+function findList(listId) {
+  for (
+    const event of
+    getAllEvents()
+  ) {
+    const list =
+      (
+        event.listen || []
+      ).find(item =>
+        item.id ===
+        listId
+      );
+
+    if (list) {
+      return {
+        event,
+        list
+      };
     }
-  );
+  }
+
+  return null;
 }
 
-function closeAdminDialog(root) {
-  root.innerHTML = '';
+function calculateAdminTotals(events) {
+  return {
+    lists:
+      events.reduce(
+        (sum, event) =>
+          sum +
+          (
+            event.listen || []
+          ).length,
+        0
+      )
+  };
 }
 
-function adminMetric(
+function calculateListTotals(lists) {
+  return {
+    places:
+      lists.reduce(
+        (sum, list) =>
+          sum +
+          Number(
+            list.anzahl || 0
+          ),
+        0
+      ),
+    occupied:
+      lists.reduce(
+        (sum, list) =>
+          sum +
+          (
+            list.eintragungen || []
+          ).length,
+        0
+      ),
+    points:
+      lists.reduce(
+        (sum, list) =>
+          sum +
+          Number(
+            list.punkte || 0
+          ),
+        0
+      )
+  };
+}
+
+function adminOverviewItem(
+  value,
+  label
+) {
+  return `
+    <div>
+      <strong>
+        ${escapeHtml(value)}
+      </strong>
+
+      <span>
+        ${escapeHtml(label)}
+      </span>
+    </div>
+  `;
+}
+
+function adminMeta(
   label,
   value
 ) {
   return `
-    <article class="admin-metric-card">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </article>
+    <div>
+      <span>
+        ${escapeHtml(label)}
+      </span>
+
+      <strong>
+        ${escapeHtml(value)}
+      </strong>
+    </div>
   `;
+}
+
+function detailText(value) {
+  return `
+    <span>
+      ${escapeHtml(value)}
+    </span>
+  `;
+}
+
+function statusBadge(status) {
+  const open =
+    String(status)
+      .toLowerCase() ===
+    'offen';
+
+  return `
+    <span class="status-badge ${
+      open
+        ? 'is-open'
+        : 'is-closed'
+    }">
+      ${escapeHtml(
+        status ||
+        'offen'
+      )}
+    </span>
+  `;
+}
+
+function compareEvents(a, b) {
+  return (
+    dateSortValue(
+      a.startdatum
+    ) -
+    dateSortValue(
+      b.startdatum
+    )
+  );
+}
+
+function compareLists(a, b) {
+  const dateDifference =
+    dateSortValue(
+      a.datum
+    ) -
+    dateSortValue(
+      b.datum
+    );
+
+  if (dateDifference) {
+    return dateDifference;
+  }
+
+  return (
+    timeSortValue(
+      a.beginn
+    ) -
+    timeSortValue(
+      b.beginn
+    )
+  );
+}
+
+function dateSortValue(value) {
+  const date =
+    parseDateParts(value);
+
+  return date
+    ? date.getTime()
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function timeSortValue(value) {
+  const match =
+    /^(\d{2}):(\d{2})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? Number(match[1]) *
+        60 +
+        Number(match[2])
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function parseDateParts(value) {
+  const match =
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? new Date(
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1])
+      )
+    : null;
+}
+
+function isoToGermanDate(value) {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? [
+        match[3],
+        match[2],
+        match[1]
+      ].join('.')
+    : '';
+}
+
+function germanToIsoDate(value) {
+  const match =
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(
+      String(value || '')
+    );
+
+  return match
+    ? [
+        match[3],
+        String(match[2]).padStart(2, '0'),
+        String(match[1]).padStart(2, '0')
+      ].join('-')
+    : '';
 }
 
 function showAdminToast(
@@ -1097,9 +2245,11 @@ function showAdminToast(
   toast.textContent =
     message;
 
-  root.appendChild(toast);
+  root.appendChild(
+    toast
+  );
 
-  window.setTimeout(
+  setTimeout(
     () => toast.remove(),
     3500
   );
@@ -1125,7 +2275,7 @@ function stopSessionRefresh() {
   if (
     adminState.refreshTimer
   ) {
-    window.clearInterval(
+    clearInterval(
       adminState.refreshTimer
     );
 
@@ -1136,36 +2286,22 @@ function stopSessionRefresh() {
 
 function createAdminLoadingMarkup() {
   return `
-    <section class="events-loading">
-      <div class="panel-card">
-        <div class="skeleton skeleton-title"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton skeleton-short"></div>
+    <section class="info-banner">
+      <span class="info-banner-icon">i</span>
+      <div>
+        <strong>Daten werden geladen.</strong>
+        <span>
+          Dies kann einen kleinen Moment dauern.
+        </span>
       </div>
     </section>
+
+    <section class="panel-card">
+      <div class="skeleton skeleton-title"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton skeleton-short"></div>
+    </section>
   `;
-}
-
-function toGermanDate(value) {
-  const text =
-    String(value || '').trim();
-
-  const match =
-    /^(\d{4})-(\d{2})-(\d{2})$/.exec(
-      text
-    );
-
-  if (!match) {
-    return text;
-  }
-
-  return (
-    match[3] +
-    '.' +
-    match[2] +
-    '.' +
-    match[1]
-  );
 }
 
 function escapeHtml(value) {
