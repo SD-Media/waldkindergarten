@@ -17,7 +17,16 @@ import {
 import {
   getStoreSnapshot,
   refreshStore,
-  getAllEvents
+  getAllEvents,
+  createStoreBackup,
+  restoreStoreBackup,
+  addEventOptimistic,
+  updateEventOptimistic,
+  removeEventOptimistic,
+  addListOptimistic,
+  updateListOptimistic,
+  removeListOptimistic,
+  removeEntryOptimistic
 } from './store.js';
 
 const adminState = {
@@ -229,8 +238,7 @@ function renderAdminDashboard(
 
         <p>
           Lege zuerst eine Veranstaltung mit den Grunddaten an.
-          Anschließend kannst du dieser Veranstaltung Helfereinsätze,
-          Schichten, Kuchenlisten, Sachspenden oder weitere Listen zuordnen.
+          Anschließend kannst du dieser Veranstaltung Helfereinsätze, Kuchenlisten, Sachspenden oder freie Mitbringlisten zuordnen.
         </p>
       </div>
 
@@ -1032,35 +1040,76 @@ function openEventForm(
       errorBox.hidden =
         true;
 
-      try {
-        const payload = {
-          titel:
-            form.elements.titel.value.trim(),
-          beschreibung:
-            form.elements.beschreibung.value.trim(),
-          startdatum:
-            isoToGermanDate(
-              form.elements.startdatum.value
-            ),
-          enddatum:
-            form.elements.enddatum.value
-              ? isoToGermanDate(
-                  form.elements.enddatum.value
-                )
-              : '',
-          verantwortlich:
-            form.elements.verantwortlich.value.trim(),
-          status:
-            form.elements.status.value,
-          sortierung:
-            Number(
-              event &&
-              event.sortierung
-                ? event.sortierung
-                : 0
-            )
-        };
+      const payload = {
+        titel:
+          form.elements.titel.value.trim(),
+        beschreibung:
+          form.elements.beschreibung.value.trim(),
+        startdatum:
+          isoToGermanDate(
+            form.elements.startdatum.value
+          ),
+        enddatum:
+          form.elements.enddatum.value
+            ? isoToGermanDate(
+                form.elements.enddatum.value
+              )
+            : '',
+        verantwortlich:
+          form.elements.verantwortlich.value.trim(),
+        status:
+          form.elements.status.value,
+        sortierung:
+          Number(
+            event &&
+            event.sortierung
+              ? event.sortierung
+              : 0
+          )
+      };
 
+      const backup =
+        createStoreBackup();
+
+      const temporaryId =
+        editing
+          ? event.id
+          : 'TEMP_EVENT_' +
+            Date.now();
+
+      if (editing) {
+        updateEventOptimistic(
+          event.id,
+          payload
+        );
+      } else {
+        addEventOptimistic({
+          id:
+            temporaryId,
+          ...payload,
+          erstelltAm:
+            '',
+          anzeigeStatus:
+            'anstehend',
+          vereinsjahr:
+            '',
+          listen:
+            []
+        });
+      }
+
+      dirty =
+        false;
+
+      root.innerHTML =
+        '';
+
+      renderAdminDashboard(
+        contentElement,
+        options
+      );
+
+      try {
         const saved =
           await apiPost(
             editing
@@ -1080,68 +1129,59 @@ function openEventForm(
             getStoredToken()
           );
 
-        dirty =
-          false;
-
-        root.innerHTML =
-          '';
-
-        await refreshStore();
-
-        if (!editing) {
-          const addNow =
-            window.confirm(
-              'Veranstaltung wurde angelegt. Jetzt direkt den ersten Einsatz oder eine Liste hinzufügen?'
+        refreshStore()
+          .then(() => {
+            renderAdminDashboard(
+              contentElement,
+              options
             );
 
-          renderAdminDashboard(
-            contentElement,
-            options
-          );
+            if (!editing) {
+              const addNow =
+                window.confirm(
+                  'Veranstaltung wurde angelegt. Jetzt direkt den ersten Einsatz oder eine Liste hinzufügen?'
+                );
 
-          if (addNow) {
-            const newEvent =
-              findEvent(
-                saved.id
-              );
+              if (addNow) {
+                const newEvent =
+                  findEvent(
+                    saved.id
+                  );
 
-            if (newEvent) {
-              openListForm(
-                contentElement,
-                options,
-                newEvent,
-                null
-              );
+                if (newEvent) {
+                  openListForm(
+                    contentElement,
+                    options,
+                    newEvent,
+                    null
+                  );
+                }
+              }
             }
-          }
-        } else {
-          showAdminToast(
-            contentElement,
-            'Veranstaltung aktualisiert.'
+          })
+          .catch(
+            error =>
+              console.warn(
+                'Hintergrundaktualisierung fehlgeschlagen.',
+                error
+              )
           );
-
-          renderAdminDashboard(
-            contentElement,
-            options
-          );
-        }
       } catch (error) {
-        errorBox.textContent =
+        restoreStoreBackup(
+          backup
+        );
+
+        renderAdminDashboard(
+          contentElement,
+          options
+        );
+
+        window.alert(
           error &&
           error.message
             ? error.message
-            : 'Die Veranstaltung konnte nicht gespeichert werden.';
-
-        errorBox.hidden =
-          false;
-
-        button.disabled =
-          false;
-
-        button.textContent =
-          editing
-            ? 'Änderungen speichern'
-            : 'Veranstaltung speichern';
+            : 'Die Veranstaltung konnte nicht gespeichert werden.'
+        );
       }
     }
   );
@@ -1211,10 +1251,9 @@ function openListForm(
               <select name="typ">
                 ${[
                   'Helfereinsatz',
-                  'Schicht',
-                  'Beitragsliste',
                   'Kuchenliste',
-                  'Sachspendenliste'
+                  'Sachspendenliste',
+                  'Freie Mitbringliste'
                 ].map(type => `
                   <option
                     value="${type}"
@@ -1479,53 +1518,133 @@ function openListForm(
       errorBox.hidden =
         true;
 
-      try {
-        const payload = {
-          veranstaltungId:
-            event.id,
-          typ:
-            form.elements.typ.value,
-          titel:
-            form.elements.titel.value.trim(),
-          beschreibung:
-            form.elements.beschreibung.value.trim(),
-          datum:
-            form.elements.datum.value
-              ? isoToGermanDate(
-                  form.elements.datum.value
-                )
-              : '',
-          beginn:
-            form.elements.beginn.value,
-          ende:
-            form.elements.ende.value,
-          verantwortlich:
-            form.elements.verantwortlich.value.trim(),
-          kategorie:
-            form.elements.kategorie.value,
-          anzahl:
-            Number(
-              form.elements.anzahl.value ||
-              0
-            ),
-          punkte:
-            settings.punkteAktiv === true
-              ? Number(
-                  form.elements.punkte.value ||
-                  0
-                )
-              : 0,
-          status:
-            form.elements.status.value,
-          sortierung:
-            Number(
-              editing &&
-              list.sortierung
-                ? list.sortierung
-                : 0
-            )
-        };
+      const payload = {
+        veranstaltungId:
+          event.id,
+        typ:
+          form.elements.typ.value,
+        titel:
+          form.elements.titel.value.trim(),
+        beschreibung:
+          form.elements.beschreibung.value.trim(),
+        datum:
+          form.elements.datum.value
+            ? isoToGermanDate(
+                form.elements.datum.value
+              )
+            : '',
+        beginn:
+          form.elements.beginn.value,
+        ende:
+          form.elements.ende.value,
+        verantwortlich:
+          form.elements.verantwortlich.value.trim(),
+        kategorie:
+          form.elements.kategorie.value,
+        anzahl:
+          Number(
+            form.elements.anzahl.value ||
+            0
+          ),
+        punkte:
+          settings.punkteAktiv === true
+            ? Number(
+                form.elements.punkte.value ||
+                0
+              )
+            : 0,
+        status:
+          form.elements.status.value,
+        sortierung:
+          Number(
+            editing &&
+            list.sortierung
+              ? list.sortierung
+              : 0
+          )
+      };
 
+      const backup =
+        createStoreBackup();
+
+      const temporaryId =
+        editing
+          ? list.id
+          : 'TEMP_LIST_' +
+            Date.now();
+
+      const optimisticList = {
+        id:
+          temporaryId,
+        ...payload,
+        uhrzeit:
+          payload.beginn &&
+          payload.ende
+            ? payload.beginn +
+              ' - ' +
+              payload.ende
+            : (
+                payload.beginn ||
+                payload.ende ||
+                ''
+              ),
+        belegt:
+          editing
+            ? (
+                list.eintragungen ||
+                []
+              ).length
+            : 0,
+        frei:
+          payload.anzahl > 0
+            ? Math.max(
+                payload.anzahl -
+                (
+                  editing
+                    ? (
+                        list.eintragungen ||
+                        []
+                      ).length
+                    : 0
+                ),
+                0
+              )
+            : null,
+        voll:
+          false,
+        eintragungen:
+          editing
+            ? (
+                list.eintragungen ||
+                []
+              )
+            : []
+      };
+
+      if (editing) {
+        updateListOptimistic(
+          list.id,
+          optimisticList
+        );
+      } else {
+        addListOptimistic(
+          event.id,
+          optimisticList
+        );
+      }
+
+      dirty =
+        false;
+
+      root.innerHTML =
+        '';
+
+      renderAdminDashboard(
+        contentElement,
+        options
+      );
+
+      try {
         await apiPost(
           editing
             ? 'updatelist'
@@ -1544,42 +1663,36 @@ function openListForm(
           getStoredToken()
         );
 
-        dirty =
-          false;
-
-        root.innerHTML =
-          '';
-
-        await refreshStore();
-
-        showAdminToast(
-          contentElement,
-          editing
-            ? 'Einsatz aktualisiert.'
-            : 'Einsatz erfolgreich angelegt.'
+        refreshStore()
+          .then(() =>
+            renderAdminDashboard(
+              contentElement,
+              options
+            )
+          )
+          .catch(
+            error =>
+              console.warn(
+                'Hintergrundaktualisierung fehlgeschlagen.',
+                error
+              )
+          );
+      } catch (error) {
+        restoreStoreBackup(
+          backup
         );
 
         renderAdminDashboard(
           contentElement,
           options
         );
-      } catch (error) {
-        errorBox.textContent =
+
+        window.alert(
           error &&
           error.message
             ? error.message
-            : 'Der Einsatz konnte nicht gespeichert werden.';
-
-        errorBox.hidden =
-          false;
-
-        button.disabled =
-          false;
-
-        button.textContent =
-          editing
-            ? 'Änderungen speichern'
-            : 'Einsatz speichern';
+            : 'Der Einsatz konnte nicht gespeichert werden.'
+        );
       }
     }
   );
@@ -1598,20 +1711,53 @@ async function deleteEntry(
     return;
   }
 
-  await runAdminMutation(
-    contentElement,
-    options,
-    () =>
-      apiPost(
-        'deleteentry',
-        {
-          id:
-            entryId
-        },
-        getStoredToken()
-      ),
-    'Eintragung gelöscht.'
+  const backup =
+    createStoreBackup();
+
+  removeEntryOptimistic(
+    entryId
   );
+
+  renderAdminDashboard(
+    contentElement,
+    options
+  );
+
+  try {
+    await apiPost(
+      'deleteentry',
+      {
+        id:
+          entryId
+      },
+      getStoredToken()
+    );
+
+    refreshStore()
+      .catch(
+        error =>
+          console.warn(
+            'Hintergrundaktualisierung fehlgeschlagen.',
+            error
+          )
+      );
+  } catch (error) {
+    restoreStoreBackup(
+      backup
+    );
+
+    renderAdminDashboard(
+      contentElement,
+      options
+    );
+
+    window.alert(
+      error &&
+      error.message
+        ? error.message
+        : 'Die Eintragung konnte nicht gelöscht werden.'
+    );
+  }
 }
 
 async function deleteList(
@@ -1627,20 +1773,53 @@ async function deleteList(
     return;
   }
 
-  await runAdminMutation(
-    contentElement,
-    options,
-    () =>
-      apiPost(
-        'deletelist',
-        {
-          id:
-            listId
-        },
-        getStoredToken()
-      ),
-    'Einsatz gelöscht.'
+  const backup =
+    createStoreBackup();
+
+  removeListOptimistic(
+    listId
   );
+
+  renderAdminDashboard(
+    contentElement,
+    options
+  );
+
+  try {
+    await apiPost(
+      'deletelist',
+      {
+        id:
+          listId
+      },
+      getStoredToken()
+    );
+
+    refreshStore()
+      .catch(
+        error =>
+          console.warn(
+            'Hintergrundaktualisierung fehlgeschlagen.',
+            error
+          )
+      );
+  } catch (error) {
+    restoreStoreBackup(
+      backup
+    );
+
+    renderAdminDashboard(
+      contentElement,
+      options
+    );
+
+    window.alert(
+      error &&
+      error.message
+        ? error.message
+        : 'Der Einsatz konnte nicht gelöscht werden.'
+    );
+  }
 }
 
 async function deleteEvent(
@@ -1650,26 +1829,59 @@ async function deleteEvent(
 ) {
   if (
     !window.confirm(
-      'Diese Veranstaltung wirklich löschen? Zugeordnete Einsätze und Eintragungen müssen vorher entfernt werden.'
+      'Soll diese Veranstaltung einschließlich aller verbundenen Einsätze, Listen und Eintragungen wirklich gelöscht werden?'
     )
   ) {
     return;
   }
 
-  await runAdminMutation(
-    contentElement,
-    options,
-    () =>
-      apiPost(
-        'deleteevent',
-        {
-          id:
-            eventId
-        },
-        getStoredToken()
-      ),
-    'Veranstaltung gelöscht.'
+  const backup =
+    createStoreBackup();
+
+  removeEventOptimistic(
+    eventId
   );
+
+  renderAdminDashboard(
+    contentElement,
+    options
+  );
+
+  try {
+    await apiPost(
+      'deleteevent',
+      {
+        id:
+          eventId
+      },
+      getStoredToken()
+    );
+
+    refreshStore()
+      .catch(
+        error =>
+          console.warn(
+            'Hintergrundaktualisierung fehlgeschlagen.',
+            error
+          )
+      );
+  } catch (error) {
+    restoreStoreBackup(
+      backup
+    );
+
+    renderAdminDashboard(
+      contentElement,
+      options
+    );
+
+    window.alert(
+      error &&
+      error.message
+        ? error.message
+        : 'Die Veranstaltung konnte nicht gelöscht werden.'
+    );
+  }
 }
 
 async function copyList(
