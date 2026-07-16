@@ -152,10 +152,10 @@ function registerRoutes() {
   registerRoute(
     'mine',
     () =>
-      renderPlaceholder(
-        'Meine Einsätze',
-        'Die persönliche Übersicht wird als nächstes umgesetzt.'
-      )
+      renderPointsPage({
+        contentElement: elements.content,
+        setPageHeading
+      })
   );
 
   registerRoute(
@@ -216,10 +216,10 @@ async function renderCurrentPage() {
   if (
     route === 'mine'
   ) {
-    return renderPlaceholder(
-      'Meine Einsätze',
-      'Die persönliche Übersicht wird als nächstes umgesetzt.'
-    );
+    return renderPointsPage({
+      contentElement: elements.content,
+      setPageHeading
+    });
   }
 
   if (
@@ -305,15 +305,13 @@ function applyTenantConfiguration() {
       );
   }
 
-  document
-    .querySelectorAll(
-      '[data-points-only]'
-    )
-    .forEach(element => {
-      element.hidden =
-        settings.punkteAktiv !==
-        true;
-    });
+  const mineLink = document.querySelector('[data-route-link="mine"]');
+  if (mineLink) mineLink.hidden = settings.punkteAktiv !== true;
+  const separatePointsLink = document.querySelector('[data-route-link="points"]');
+  if (separatePointsLink) separatePointsLink.hidden = true;
+  document.querySelectorAll('[data-points-only]').forEach(element => {
+    if (element !== separatePointsLink) element.hidden = settings.punkteAktiv !== true;
+  });
 }
 
 function renderDashboard() {
