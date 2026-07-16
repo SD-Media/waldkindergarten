@@ -2637,3 +2637,29 @@ a:focus-visible {
   display: grid;
   gap: 14px;
 }
+
+.admin-primary-actions { justify-content: flex-start; }
+.admin-primary-actions #createEventButton { margin-left: auto; }
+.admin-points-action-button { box-shadow: var(--shadow-sm); }
+.admin-points-summary { grid-template-columns: repeat(2,minmax(0,1fr)); max-width:430px; }
+.admin-points-table th { padding:14px 16px; font-size:11px; }
+.admin-points-table td { padding:15px 16px; font-size:13px; }
+.admin-points-table td strong { font-size:13px; }
+.points-difference.is-positive,.difference-metric.is-positive strong { color:#08783f; }
+.points-difference.is-negative,.difference-metric.is-negative strong { color:#b43b35; }
+.points-difference.is-neutral,.difference-metric.is-neutral strong { color:var(--color-muted); }
+.personal-points-actions { display:flex; align-items:center; gap:10px; }
+.points-detail-title { margin-top:4px!important; color:var(--color-text)!important; font-weight:700; }
+.points-detail-meta { display:flex; flex-wrap:wrap; gap:5px 12px; margin-top:7px; }
+.points-detail-meta span { margin:0!important; color:var(--color-muted); font-size:10px; }
+@media print {
+  .sidebar,.topbar,.info-banner,.points-search-card,.print-hide,.connection-status { display:none!important; }
+  .main-shell,.page-content { margin:0!important; padding:0!important; }
+  .personal-points-card { border:0; box-shadow:none; }
+  body { background:#fff; }
+}
+@media (max-width:780px) {
+  .admin-primary-actions { display:grid; grid-template-columns:1fr; }
+  .admin-primary-actions #createEventButton { margin-left:0; }
+  .personal-points-actions { align-items:flex-end; flex-direction:column-reverse; }
+}
