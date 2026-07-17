@@ -39,6 +39,26 @@ const archiveState = {
     ''
 };
 
+export function invalidateArchiveCache() {
+  archiveState.overview =
+    null;
+
+  archiveState.details.clear();
+  archiveState.openEventId =
+    '';
+
+  try {
+    sessionStorage.removeItem(
+      getArchiveSessionCacheKey_()
+    );
+  } catch (error) {
+    console.warn(
+      'Archivcache konnte nicht entfernt werden.',
+      error
+    );
+  }
+}
+
 export async function renderArchivePage(
   options
 ) {
@@ -192,11 +212,13 @@ async function loadArchiveOverview(
     archiveState.overview =
       cached;
 
-    renderArchiveOverview(
-      contentElement,
-      options
-    );
-  } else {
+    if (isArchiveRoute_()) {
+      renderArchiveOverview(
+        contentElement,
+        options
+      );
+    }
+  } else if (isArchiveRoute_()) {
     contentElement.innerHTML =
       createArchiveLoadingMarkup();
   }
@@ -213,11 +235,17 @@ async function loadArchiveOverview(
       archiveState.overview
     );
 
-    renderArchiveOverview(
-      contentElement,
-      options
-    );
+    if (isArchiveRoute_()) {
+      renderArchiveOverview(
+        contentElement,
+        options
+      );
+    }
   } catch (error) {
+    if (!isArchiveRoute_()) {
+      return;
+    }
+
     if (cached) {
       console.warn(
         'Archivaktualisierung fehlgeschlagen; der letzte Sitzungsstand bleibt sichtbar.',
@@ -889,11 +917,17 @@ async function loadArchiveDetails(
       details
     );
 
-    renderArchiveOverview(
-      contentElement,
-      options
-    );
+    if (isArchiveRoute_()) {
+      renderArchiveOverview(
+        contentElement,
+        options
+      );
+    }
   } catch (error) {
+    if (!isArchiveRoute_()) {
+      return;
+    }
+
     window.alert(
       error &&
       error.message
@@ -983,10 +1017,16 @@ async function restoreArchivedEvent(
     archiveState.openEventId =
       '';
 
-    renderArchiveOverview(
-      contentElement,
-      options
+    writeArchiveSessionCache_(
+      archiveState.overview
     );
+
+    if (isArchiveRoute_()) {
+      renderArchiveOverview(
+        contentElement,
+        options
+      );
+    }
 
     await apiPost(
       'restoreevent',
@@ -1027,6 +1067,14 @@ async function restoreArchivedEvent(
 
     archiveState.overview =
       overviewBackup;
+
+    writeArchiveSessionCache_(
+      archiveState.overview
+    );
+
+    if (!isArchiveRoute_()) {
+      return;
+    }
 
     renderArchiveOverview(
       contentElement,
@@ -1317,6 +1365,19 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function isArchiveRoute_() {
+  const route =
+    String(
+      window.location.hash || ''
+    )
+      .replace(/^#/, '')
+      .split('?')[0]
+      .trim();
+
+  return route ===
+    'archive';
 }
 
 function getArchiveSessionCacheKey_() {
