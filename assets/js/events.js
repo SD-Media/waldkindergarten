@@ -829,8 +829,12 @@ function openEntryDialog(
                   name="menge"
                   type="number"
                   min="1"
+                  max="${Number(list.frei || 0) > 0
+                    ? escapeHtml(list.frei)
+                    : ''}"
                   step="1"
                   value="1"
+                  required
                 >
               </label>
             `
