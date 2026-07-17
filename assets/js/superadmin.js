@@ -44,6 +44,9 @@ function configurePlatformShell_(elements) {
   elements.sidebar.hidden = true;
   elements.overlay.hidden = true;
   elements.mobileMenuButton.hidden = true;
+  if (elements.tenantQrButton) elements.tenantQrButton.hidden = true;
+  if (elements.tenantShareButton) elements.tenantShareButton.hidden = true;
+  if (elements.topbarCenterLogo) elements.topbarCenterLogo.hidden = true;
   elements.app.classList.add('platform-app');
   elements.connection.dataset.state = 'online';
   elements.connection.lastElementChild.textContent = 'Zentrale Verwaltung';
@@ -110,7 +113,9 @@ function renderLogin_(elements, errorMessage = '') {
 }
 
 async function renderDashboard_(elements, token) {
-  const tenants = await apiPost('superadmintenants', {}, token);
+  const dashboard = await apiPost('superadmintenants', {}, token);
+  const tenants = Array.isArray(dashboard) ? dashboard : (dashboard.tenants || []);
+  const totals = Array.isArray(dashboard) ? calculateDashboardTotals_(tenants) : (dashboard.totals || calculateDashboardTotals_(tenants));
 
   elements.content.innerHTML = `
     <section class="superadmin-header-card">
@@ -127,6 +132,13 @@ async function renderDashboard_(elements, token) {
           Abmelden
         </button>
       </div>
+    </section>
+
+    <section class="superadmin-metrics" aria-label="Kennzahlen">
+      ${renderMetricCard_(totals.tenants, 'Vereine')}
+      ${renderMetricCard_(totals.activeEvents, 'Aktive Veranstaltungen')}
+      ${renderMetricCard_(totals.openLists, 'Offene Listen')}
+      ${renderMetricCard_(totals.entries, 'Eintragungen')}
     </section>
 
     <section class="panel-card superadmin-tenant-panel">
@@ -318,6 +330,7 @@ function openCreateDialog_(elements, token) {
       <label class="form-field"><span>Einrichtungskennung</span><input name="tenant" placeholder="sportverein-musterstadt" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*"></label>
       <label class="form-field"><span>Name</span><input name="name" required></label>
       <label class="form-field"><span>Adminpasswort</span><input name="password" type="password" minlength="8" required></label>
+      <label class="form-field"><span>Logo-URL <small>optional</small></span><input name="logoUrl" type="url" placeholder="https://…/logo.png"></label>
       <div class="form-grid-two">
         <label class="form-field"><span>Starttag Vereinsjahr</span><input name="startTag" type="number" min="1" max="31" value="1" required></label>
         <label class="form-field"><span>Startmonat Vereinsjahr</span><input name="startMonat" type="number" min="1" max="12" value="8" required></label>
@@ -353,6 +366,8 @@ function openEditDialog_(elements, token, tenant) {
       <label class="form-field"><span>Einrichtungskennung</span><input name="tenant" value="${escapeHtml_(tenant.tenant)}" required></label>
       <label class="form-field"><span>Name</span><input name="name" value="${escapeHtml_(tenant.name)}" required></label>
       <label class="form-field"><span>Google-Sheet-ID</span><input name="sheetId" value="${escapeHtml_(tenant.sheetId)}" required></label>
+      <label class="form-field"><span>Logo-URL <small>optional</small></span><input name="logoUrl" type="url" value="${escapeHtml_(tenant.logoUrl || '')}" placeholder="https://…/logo.png"></label>
+      <label class="form-field"><span>Neues Adminpasswort <small>optional</small></span><input name="newPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Nur ausfüllen, wenn es geändert werden soll"></label>
       <label class="form-field"><span>Status</span><select name="status">${['aktiv','testbetrieb','gesperrt','archiviert'].map(status => `<option value="${status}" ${tenant.status === status ? 'selected' : ''}>${status}</option>`).join('')}</select></label>
       <div id="superadminFormError" class="form-error" hidden></div>
       <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Abbrechen</button><button class="button button-primary" type="submit">Speichern</button></div>
@@ -419,6 +434,20 @@ async function submitDialogAction_(form, action) {
     error.hidden = false;
     button.disabled = false;
   }
+}
+
+function calculateDashboardTotals_(tenants) {
+  return tenants.reduce((totals, tenant) => {
+    totals.tenants += 1;
+    totals.activeEvents += Number(tenant.activeEvents || 0);
+    totals.openLists += Number(tenant.openLists || 0);
+    totals.entries += Number(tenant.entries || 0);
+    return totals;
+  }, { tenants: 0, activeEvents: 0, openLists: 0, entries: 0 });
+}
+
+function renderMetricCard_(value, label) {
+  return `<article class="superadmin-metric-card"><strong>${escapeHtml_(value)}</strong><span>${escapeHtml_(label)}</span></article>`;
 }
 
 function getToken_() {
