@@ -156,20 +156,17 @@ export async function loadStore(
   state.loadingPromise =
     (async () => {
       /*
-       * Google Apps Script benötigt nach längerer Inaktivität
-       * gelegentlich deutlich länger als 20 Sekunden.
-       *
-       * Der große Hauptaufruf wird deshalb zuerst und allein ausgeführt.
-       * Erst danach werden die Kategorien geladen. Dadurch konkurrieren
-       * nicht zwei Anfragen gleichzeitig um den Kaltstart.
+       * Schnellstart:
+       * Zuerst werden nur Übersichtsdaten geladen.
+       * Die aufwendige Punkteberechnung folgt später im Hintergrund.
        */
       const frontendData =
         await apiGet(
-          'frontenddata',
+          'overviewdata',
           {},
           {
             timeoutMs:
-              65000,
+              45000,
             attempts:
               2
           }
@@ -181,40 +178,9 @@ export async function loadStore(
       state.loadedAt =
         Date.now();
 
-      try {
-        const categories =
-          state.categories.length &&
-          !force
-            ? state.categories
-            : await apiGet(
-                'categories',
-                {},
-                {
-                  timeoutMs:
-                    35000,
-                  attempts:
-                    2
-                }
-              );
-
-        state.categories =
-          Array.isArray(
-            categories
-          )
-            ? categories
-            : [];
-      } catch (error) {
-        /*
-         * Die Kernanwendung bleibt nutzbar, wenn lediglich
-         * die Kategorienaktualisierung vorübergehend scheitert.
-         */
-        console.warn(
-          'Kategorien konnten nicht aktualisiert werden.',
-          error
-        );
-      }
-
       persistStoreCache();
+
+      loadCategoriesInBackground_();
 
       return getStoreSnapshot();
     })()
@@ -226,12 +192,106 @@ export async function loadStore(
   return state.loadingPromise;
 }
 
+/**
+ * Lädt anschließend den vollständigen Datenstand einschließlich
+ * Punkteberechnung und Kategorien.
+ *
+ * @return {Promise<Object>}
+ */
 export async function refreshStore() {
-  return loadStore({
-    force:
-      true
-  });
+  const [
+    frontendData,
+    categories
+  ] =
+    await Promise.all([
+      apiGet(
+        'frontenddata',
+        {},
+        {
+          timeoutMs:
+            65000,
+          attempts:
+            2
+        }
+      ),
+      apiGet(
+        'categories',
+        {},
+        {
+          timeoutMs:
+            35000,
+          attempts:
+            2
+        }
+      ).catch(error => {
+        console.warn(
+          'Kategorien konnten nicht aktualisiert werden.',
+          error
+        );
+
+        return state.categories;
+      })
+    ]);
+
+  state.frontendData =
+    frontendData;
+
+  state.categories =
+    Array.isArray(
+      categories
+    )
+      ? categories
+      : [];
+
+  state.loadedAt =
+    Date.now();
+
+  persistStoreCache();
+
+  return getStoreSnapshot();
 }
+
+/**
+ * Lädt Kategorien ohne den sichtbaren Schnellstart zu blockieren.
+ */
+function loadCategoriesInBackground_() {
+  if (
+    Array.isArray(
+      state.categories
+    ) &&
+    state.categories.length > 0
+  ) {
+    return;
+  }
+
+  apiGet(
+    'categories',
+    {},
+    {
+      timeoutMs:
+        35000,
+      attempts:
+        2
+    }
+  )
+    .then(categories => {
+      state.categories =
+        Array.isArray(
+          categories
+        )
+          ? categories
+          : [];
+
+      persistStoreCache();
+    })
+    .catch(error => {
+      console.warn(
+        'Kategorien konnten im Hintergrund nicht geladen werden.',
+        error
+      );
+    });
+}
+
 
 export function updateFrontendData(
   frontendData
