@@ -3709,15 +3709,16 @@ a:focus-visible {
 }
 
 .admin-guide-dialog {
-  width: min(760px, calc(100vw - 2rem));
-  max-height: min(86vh, 900px);
+  width: min(920px, calc(100vw - 2rem));
+  max-height: min(88vh, 920px);
   overflow: auto;
 }
 
 .admin-guide-content {
   display: grid;
   gap: 1.25rem;
-  padding: 0.25rem 0;
+  padding: 0.75rem 1.25rem 1rem;
+  line-height: 1.6;
 }
 
 .admin-guide-content section {
@@ -3735,7 +3736,18 @@ a:focus-visible {
 }
 
 .admin-guide-content p {
-  margin: 0.35rem 0;
+  margin: 0.45rem 0;
+  max-width: 78ch;
+}
+
+@media (max-width: 640px) {
+  .admin-guide-dialog {
+    width: calc(100vw - 1rem);
+  }
+
+  .admin-guide-content {
+    padding: 0.5rem 0.5rem 0.75rem;
+  }
 }
 
 .category-management-row.is-selected {
