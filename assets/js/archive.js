@@ -381,7 +381,7 @@ function renderArchiveOverview(
 
         ${archiveMetric(
           overview.anzahl.listen,
-          'Einsätze / Listen'
+          'Listen'
         )}
 
         ${archiveMetric(
@@ -549,7 +549,7 @@ function renderArchiveEventCard(
                 : ''}
 
               ${archiveMeta(
-                'Einsätze / Listen',
+                'Listen',
                 event.anzahlListen || 0
               )}
 
