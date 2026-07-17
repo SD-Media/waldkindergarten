@@ -237,11 +237,9 @@ export async function refreshStore() {
     frontendData;
 
   state.categories =
-    Array.isArray(
+    sortStoreCategories_(
       categories
-    )
-      ? categories
-      : [];
+    );
 
   state.loadedAt =
     Date.now();
@@ -309,9 +307,9 @@ export function updateCategories(
   categories
 ) {
   state.categories =
-    Array.isArray(categories)
-      ? categories
-      : [];
+    sortStoreCategories_(
+      categories
+    );
 
   persistStoreCache();
 }
@@ -849,3 +847,82 @@ export function finalizeEntryOptimistic(
     }
   }
 }
+
+function sortStoreCategories_(
+  categories
+) {
+  return (
+    Array.isArray(
+      categories
+    )
+      ? categories.slice()
+      : []
+  )
+    .sort(
+      (a, b) =>
+        String(
+          a.bezeichnung || ''
+        ).localeCompare(
+          String(
+            b.bezeichnung || ''
+          ),
+          'de',
+          {
+            sensitivity:
+              'base'
+          }
+        )
+    );
+}
+
+function calculateStoreListOccupied_(
+  list
+) {
+  const entries =
+    list.eintragungen || [];
+
+  const type =
+    String(
+      list.typ || ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const quantityBased =
+    [
+      'kuchenliste',
+      'sachspende',
+      'freie-mitbringliste'
+    ].includes(
+      type
+    );
+
+  if (!quantityBased) {
+    return entries.length;
+  }
+
+  return entries.reduce(
+    (sum, entry) => {
+      const quantity =
+        Number(
+          entry.menge
+        );
+
+      return (
+        sum +
+        (
+          Number.isFinite(
+            quantity
+          ) &&
+          quantity > 0
+            ? Math.floor(
+                quantity
+              )
+            : 1
+        )
+      );
+    },
+    0
+  );
+}
+
