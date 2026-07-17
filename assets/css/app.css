@@ -3699,3 +3699,80 @@ a:focus-visible {
 .category-color-dot {
   flex: 0 0 auto;
 }
+
+/* Version 1.0 – Kurzanleitung und stabile Kategorienverwaltung */
+.admin-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.admin-guide-dialog {
+  width: min(760px, calc(100vw - 2rem));
+  max-height: min(86vh, 900px);
+  overflow: auto;
+}
+
+.admin-guide-content {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0.25rem 0;
+}
+
+.admin-guide-content section {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color, #dfe5e2);
+}
+
+.admin-guide-content section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.admin-guide-content h3 {
+  margin: 0 0 0.5rem;
+}
+
+.admin-guide-content p {
+  margin: 0.35rem 0;
+}
+
+.category-management-row.is-selected {
+  outline: 2px solid var(--primary-color, #1f6f5c);
+  outline-offset: -2px;
+}
+
+.category-management-message {
+  padding: 0.8rem 0.9rem;
+  border-radius: 0.7rem;
+  line-height: 1.45;
+}
+
+.category-management-message.is-success {
+  background: #e9f7ef;
+  color: #17633a;
+  border: 1px solid #b8e1c7;
+}
+
+.category-management-message.is-error {
+  background: #fff0f0;
+  color: #9d2424;
+  border: 1px solid #f0bcbc;
+}
+
+.category-editor-panel :disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+@media (max-width: 720px) {
+  .admin-session-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-session-actions .button {
+    flex: 1 1 auto;
+  }
+}
