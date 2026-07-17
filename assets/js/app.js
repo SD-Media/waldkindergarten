@@ -71,7 +71,17 @@ const elements = {
   sidebar:
     document.getElementById('sidebar'),
   overlay:
-    document.getElementById('sidebarOverlay')
+    document.getElementById('sidebarOverlay'),
+  brandMark:
+    document.getElementById('brandMark'),
+  topbarCenterLogo:
+    document.getElementById('topbarCenterLogo'),
+  themeToggleButton:
+    document.getElementById('themeToggleButton'),
+  tenantQrButton:
+    document.getElementById('tenantQrButton'),
+  tenantShareButton:
+    document.getElementById('tenantShareButton')
 };
 
 document.addEventListener(
@@ -80,17 +90,13 @@ document.addEventListener(
 );
 
 async function initialize() {
-  const appContext =
-    resolveAppContext();
+  initializeTheme_();
+  bindGlobalUtilityButtons_();
 
-  if (
-    appContext.mode ===
-    'platform'
-  ) {
-    await renderSuperAdminApp(
-      elements
-    );
+  const appContext = resolveAppContext();
 
+  if (appContext.mode === 'platform') {
+    await renderSuperAdminApp(elements);
     return;
   }
 
@@ -113,9 +119,7 @@ async function initialize() {
       : 'Verbindung wird geprüft'
   );
 
-  if (
-    hasCachedData
-  ) {
+  if (hasCachedData) {
     applyTenantConfiguration();
     await renderCurrentPage();
   } else {
@@ -124,7 +128,8 @@ async function initialize() {
 
   try {
     await loadStore({
-      force: true
+      force:
+        true
     });
 
     applyTenantConfiguration();
@@ -142,9 +147,7 @@ async function initialize() {
      */
     refreshInBackground();
   } catch (error) {
-    if (
-      hasCachedData
-    ) {
+    if (hasCachedData) {
       setConnection(
         'online',
         'Letzter Stand'
@@ -163,9 +166,7 @@ async function initialize() {
       'Keine Verbindung'
     );
 
-    renderError(
-      error
-    );
+    renderError(error);
   }
 }
 
@@ -176,23 +177,22 @@ function bindAdminSessionNavigation() {
       setArchiveNavigationVisibility(
         event &&
         event.detail &&
-        event.detail.loggedIn === true
+        event.detail.loggedIn ===
+          true
       );
     }
   );
 
   validateSession()
-    .then(
-      session =>
-        setArchiveNavigationVisibility(
-          Boolean(
-            session
-          )
+    .then(session =>
+      setArchiveNavigationVisibility(
+        Boolean(
+          session
         )
+      )
     )
-    .catch(
-      () =>
-        hideArchiveNavigation()
+    .catch(() =>
+      hideArchiveNavigation()
     );
 }
 
@@ -215,9 +215,7 @@ function setArchiveNavigationVisibility(
       '[data-route-link="admin"]'
     );
 
-  if (
-    !archiveLink
-  ) {
+  if (!archiveLink) {
     return;
   }
 
@@ -246,22 +244,20 @@ function bindNavigation() {
     .querySelectorAll(
       '[data-route-link]'
     )
-    .forEach(
-      link => {
-        link.addEventListener(
-          'click',
-          event => {
-            event.preventDefault();
+    .forEach(link => {
+      link.addEventListener(
+        'click',
+        event => {
+          event.preventDefault();
 
-            navigate(
-              link.dataset.routeLink
-            );
+          navigate(
+            link.dataset.routeLink
+          );
 
-            closeMobileNavigation();
-          }
-        );
-      }
-    );
+          closeMobileNavigation();
+        }
+      );
+    });
 
   elements.mobileMenuButton
     .addEventListener(
@@ -282,23 +278,6 @@ function registerRoutes() {
     renderDashboard
   );
 
-  /*
-   * Aktuelle Menüroute der Einsatzübersicht.
-   */
-  registerRoute(
-    'events',
-    () =>
-      renderOverviewPage({
-        contentElement:
-          elements.content,
-        setPageHeading
-      })
-  );
-
-  /*
-   * Bestehende ältere Links mit #overview
-   * bleiben weiterhin funktionsfähig.
-   */
   registerRoute(
     'overview',
     () =>
@@ -313,8 +292,7 @@ function registerRoutes() {
     'mine',
     () =>
       renderPointsPage({
-        contentElement:
-          elements.content,
+        contentElement: elements.content,
         setPageHeading
       })
   );
@@ -348,6 +326,7 @@ function registerRoutes() {
         setPageHeading
       })
   );
+
 }
 
 async function renderCurrentPage() {
@@ -355,7 +334,6 @@ async function renderCurrentPage() {
     getCurrentRoute();
 
   if (
-    route === 'events' ||
     route === 'overview'
   ) {
     return renderOverviewPage({
@@ -379,8 +357,7 @@ async function renderCurrentPage() {
     route === 'mine'
   ) {
     return renderPointsPage({
-      contentElement:
-        elements.content,
+      contentElement: elements.content,
       setPageHeading
     });
   }
@@ -420,10 +397,7 @@ async function refreshInBackground() {
      * vollständig neu aufbauen. Geöffnete Dialoge und Formulare
      * bleiben dadurch unangetastet.
      */
-    if (
-      getCurrentRoute() !==
-      'admin'
-    ) {
+    if (getCurrentRoute() !== 'admin') {
       await renderCurrentPage();
     }
   } catch (error) {
@@ -452,6 +426,11 @@ function applyTenantConfiguration() {
   elements.tenantName.textContent =
     tenantName;
 
+  applyTenantLogo_(
+    String(settings.logoUrl || settings.logourl || '').trim(),
+    tenantName
+  );
+
   document.title =
     tenantName +
     ' – ' +
@@ -475,45 +454,13 @@ function applyTenantConfiguration() {
       );
   }
 
-  const mineLink =
-    document.querySelector(
-      '[data-route-link="mine"]'
-    );
-
-  if (
-    mineLink
-  ) {
-    mineLink.hidden =
-      settings.punkteAktiv !== true;
-  }
-
-  const separatePointsLink =
-    document.querySelector(
-      '[data-route-link="points"]'
-    );
-
-  if (
-    separatePointsLink
-  ) {
-    separatePointsLink.hidden =
-      true;
-  }
-
-  document
-    .querySelectorAll(
-      '[data-points-only]'
-    )
-    .forEach(
-      element => {
-        if (
-          element !==
-          separatePointsLink
-        ) {
-          element.hidden =
-            settings.punkteAktiv !== true;
-        }
-      }
-    );
+  const mineLink = document.querySelector('[data-route-link="mine"]');
+  if (mineLink) mineLink.hidden = settings.punkteAktiv !== true;
+  const separatePointsLink = document.querySelector('[data-route-link="points"]');
+  if (separatePointsLink) separatePointsLink.hidden = true;
+  document.querySelectorAll('[data-points-only]').forEach(element => {
+    if (element !== separatePointsLink) element.hidden = settings.punkteAktiv !== true;
+  });
 }
 
 function renderDashboard() {
@@ -528,9 +475,7 @@ function renderDashboard() {
     'Alles Wichtige auf einen Blick'
   );
 
-  if (
-    !data
-  ) {
+  if (!data) {
     renderInitialLoadingNotice();
     return;
   }
@@ -546,9 +491,8 @@ function renderDashboard() {
 
   const nextEvent =
     events
-      .filter(
-        event =>
-          event.startdatum
+      .filter(event =>
+        event.startdatum
       )
       .sort(
         (a, b) =>
@@ -584,18 +528,12 @@ function renderDashboard() {
         </h2>
 
         <p>
-          ${
-            nextEvent
-              ? 'Nächste Veranstaltung: ' +
-                escapeHtml(
-                  nextEvent.titel
-                ) +
-                ' am ' +
-                escapeHtml(
-                  nextEvent.startdatum
-                )
-              : 'Aktuell ist keine kommende Veranstaltung hinterlegt.'
-          }
+          ${nextEvent
+            ? 'Nächste Veranstaltung: ' +
+              escapeHtml(nextEvent.titel) +
+              ' am ' +
+              escapeHtml(nextEvent.startdatum)
+            : 'Aktuell ist keine kommende Veranstaltung hinterlegt.'}
         </p>
       </div>
 
@@ -613,7 +551,7 @@ function renderDashboard() {
       )}
 
       ${metricCard(
-        'Einsätze und Listen',
+        'Listen',
         lists.length,
         'Zugeordnete Aufgaben'
       )}
@@ -670,9 +608,7 @@ function renderPlaceholder(
   `;
 }
 
-function renderError(
-  error
-) {
+function renderError(error) {
   setPageHeading(
     'Verbindungsproblem',
     'Das Backend konnte nicht geladen werden'
@@ -754,9 +690,7 @@ function setPageHeading(
       'headerLoadingNote'
     );
 
-  if (
-    !loadingNote
-  ) {
+  if (!loadingNote) {
     loadingNote =
       document.createElement(
         'span'
@@ -774,9 +708,7 @@ function setPageHeading(
           '.page-heading'
         );
 
-    if (
-      heading
-    ) {
+    if (heading) {
       heading.appendChild(
         loadingNote
       );
@@ -816,9 +748,7 @@ function toggleMobileNavigation() {
   elements.mobileMenuButton
     .setAttribute(
       'aria-expanded',
-      String(
-        isOpen
-      )
+      String(isOpen)
     );
 }
 
@@ -839,55 +769,127 @@ function closeMobileNavigation() {
     );
 }
 
-function parseDate(
-  value
-) {
+function parseDate(value) {
   const match =
     /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(
-      String(
-        value || ''
-      )
+      String(value || '')
     );
 
   return match
     ? new Date(
-        Number(
-          match[3]
-        ),
-        Number(
-          match[2]
-        ) - 1,
-        Number(
-          match[1]
-        )
+        Number(match[3]),
+        Number(match[2]) - 1,
+        Number(match[1])
       ).getTime()
     : Number.MAX_SAFE_INTEGER;
 }
 
-function escapeHtml(
-  value
-) {
-  return String(
-    value ?? ''
-  )
-    .replace(
-      /&/g,
-      '&amp;'
-    )
-    .replace(
-      /</g,
-      '&lt;'
-    )
-    .replace(
-      />/g,
-      '&gt;'
-    )
-    .replace(
-      /"/g,
-      '&quot;'
-    )
-    .replace(
-      /'/g,
-      '&#039;'
-    );
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+
+function initializeTheme_() {
+  const stored = String(localStorage.getItem('vereinsverwaltung_theme') || 'light');
+  document.documentElement.dataset.theme = stored === 'dark' ? 'dark' : 'light';
+  updateThemeButton_();
+}
+
+function bindGlobalUtilityButtons_() {
+  if (elements.themeToggleButton) {
+    elements.themeToggleButton.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('vereinsverwaltung_theme', next);
+      updateThemeButton_();
+    });
+  }
+
+  if (elements.tenantShareButton) {
+    elements.tenantShareButton.addEventListener('click', shareTenantPage_);
+  }
+
+  if (elements.tenantQrButton) {
+    elements.tenantQrButton.addEventListener('click', showTenantQrCode_);
+  }
+}
+
+function updateThemeButton_() {
+  if (!elements.themeToggleButton) return;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  elements.themeToggleButton.textContent = dark ? '☀' : '◐';
+  elements.themeToggleButton.title = dark ? 'Hellen Modus aktivieren' : 'Dunklen Modus aktivieren';
+}
+
+function getTenantPublicUrl_() {
+  return window.location.origin + window.location.pathname.replace(/\/$/, '') + '/#events';
+}
+
+async function shareTenantPage_() {
+  const url = getTenantPublicUrl_();
+  const data = getStoreSnapshot().frontendData || {};
+  const title = data.einrichtungsname || 'Veranstaltungen & Listen';
+  try {
+    if (navigator.share) {
+      await navigator.share({ title, text: 'Veranstaltungen & Listen', url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    window.alert('Der Link wurde in die Zwischenablage kopiert.');
+  } catch (error) {
+    if (error && error.name === 'AbortError') return;
+    window.prompt('Link kopieren:', url);
+  }
+}
+
+function showTenantQrCode_() {
+  const url = getTenantPublicUrl_();
+  const root = document.createElement('div');
+  root.className = 'dialog-backdrop global-qr-dialog';
+  const qrUrl = 'https://quickchart.io/qr?size=320&margin=2&text=' + encodeURIComponent(url);
+  root.innerHTML = `
+    <section class="dialog-card qr-dialog-card" role="dialog" aria-modal="true" aria-labelledby="qrDialogTitle">
+      <header class="dialog-header">
+        <div><span class="eyebrow">Direktlink</span><h2 id="qrDialogTitle">QR-Code zur Einrichtung</h2></div>
+        <button class="icon-button" type="button" data-close-qr>×</button>
+      </header>
+      <div class="qr-code-wrap"><img src="${qrUrl}" alt="QR-Code zur öffentlichen Seite der Einrichtung"></div>
+      <p class="qr-url">${escapeGlobalHtml_(url)}</p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" type="button" data-copy-qr-link>Link kopieren</button>
+        <button class="button button-primary" type="button" data-close-qr>Schließen</button>
+      </div>
+    </section>`;
+  document.body.appendChild(root);
+  const close = () => root.remove();
+  root.querySelectorAll('[data-close-qr]').forEach(button => button.addEventListener('click', close));
+  root.querySelector('[data-copy-qr-link]').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); window.alert('Link kopiert.'); }
+    catch (_) { window.prompt('Link kopieren:', url); }
+  });
+}
+
+function applyTenantLogo_(logoUrl, tenantName) {
+  if (elements.topbarCenterLogo) {
+    elements.topbarCenterLogo.hidden = !logoUrl;
+    elements.topbarCenterLogo.innerHTML = logoUrl
+      ? `<img src="${escapeGlobalHtml_(logoUrl)}" alt="Logo ${escapeGlobalHtml_(tenantName)}">`
+      : '';
+  }
+  if (elements.brandMark) {
+    elements.brandMark.innerHTML = logoUrl
+      ? `<img src="${escapeGlobalHtml_(logoUrl)}" alt="">`
+      : escapeGlobalHtml_(String(tenantName || 'V').slice(0, 1).toUpperCase());
+  }
+}
+
+function escapeGlobalHtml_(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
