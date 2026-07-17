@@ -185,9 +185,32 @@ function setArchiveNavigationVisibility(
       '[data-route-link="archive"]'
     );
 
-  if (archiveLink) {
-    archiveLink.hidden =
-      !visible;
+  const adminLink =
+    document.querySelector(
+      '[data-route-link="admin"]'
+    );
+
+  if (!archiveLink) {
+    return;
+  }
+
+  archiveLink.hidden =
+    !visible;
+
+  archiveLink.classList.toggle(
+    'admin-sub-navigation',
+    visible
+  );
+
+  if (
+    visible &&
+    adminLink &&
+    adminLink.parentElement
+  ) {
+    adminLink.insertAdjacentElement(
+      'afterend',
+      archiveLink
+    );
   }
 }
 
