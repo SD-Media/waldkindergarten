@@ -1,0 +1,353 @@
+/**
+ * Vereinsverwaltung – Superadmin-Oberfläche
+ */
+
+import {
+  apiPost
+} from './api.js';
+
+import {
+  createTenantUrl
+} from './config.js';
+
+const STORAGE_KEY = 'vereinsverwaltung_superadmin_token';
+
+export async function renderSuperAdminApp(elements) {
+  configurePlatformShell_(elements);
+
+  const token = getToken_();
+
+  if (!token) {
+    renderLogin_(elements);
+    return;
+  }
+
+  try {
+    await apiPost('superadminsession', {}, token);
+    await renderDashboard_(elements, token);
+  } catch (error) {
+    clearToken_();
+    renderLogin_(elements, error.message);
+  }
+}
+
+function configurePlatformShell_(elements) {
+  document.title = 'Superadmin – Vereinsplattform';
+  elements.tenantName.textContent = 'Vereinsplattform';
+  elements.pageTitle.textContent = 'Superadmin';
+  elements.pageDescription.textContent = 'Zentrale Verwaltung aller Einrichtungen';
+  elements.sidebar.hidden = true;
+  elements.overlay.hidden = true;
+  elements.mobileMenuButton.hidden = true;
+  elements.app.classList.add('platform-app');
+  elements.connection.dataset.state = 'online';
+  elements.connection.lastElementChild.textContent = 'Zentrale Verwaltung';
+}
+
+function renderLogin_(elements, errorMessage = '') {
+  elements.content.innerHTML = `
+    <section class="superadmin-login-shell">
+      <div class="superadmin-login-card">
+        <div class="superadmin-login-icon" aria-hidden="true">V</div>
+        <span class="eyebrow">Vereinsplattform</span>
+        <h1>Superadmin-Anmeldung</h1>
+        <p>Hier verwalten Sie alle Vereine und Einrichtungen der Plattform.</p>
+
+        <form id="superadminLoginForm" class="admin-login-form">
+          <label class="form-field">
+            <span>Superadmin-Passwort</span>
+            <input
+              id="superadminPassword"
+              type="password"
+              autocomplete="current-password"
+              required
+              autofocus
+            >
+          </label>
+
+          <div id="superadminLoginError" class="form-error" ${errorMessage ? '' : 'hidden'}>
+            ${escapeHtml_(errorMessage)}
+          </div>
+
+          <button class="button button-primary" type="submit">
+            Anmelden
+          </button>
+        </form>
+      </div>
+    </section>
+  `;
+
+  document
+    .getElementById('superadminLoginForm')
+    .addEventListener('submit', async event => {
+      event.preventDefault();
+
+      const form = event.currentTarget;
+      const button = form.querySelector('button[type="submit"]');
+      const error = document.getElementById('superadminLoginError');
+      const password = document.getElementById('superadminPassword').value;
+
+      button.disabled = true;
+      button.textContent = 'Anmeldung läuft …';
+      error.hidden = true;
+
+      try {
+        const result = await apiPost('superadminlogin', { password });
+        setToken_(result.token);
+        await renderDashboard_(elements, result.token);
+      } catch (loginError) {
+        error.textContent = loginError.message;
+        error.hidden = false;
+        button.disabled = false;
+        button.textContent = 'Anmelden';
+      }
+    });
+}
+
+async function renderDashboard_(elements, token) {
+  const tenants = await apiPost('superadmintenants', {}, token);
+
+  elements.content.innerHTML = `
+    <section class="superadmin-header-card">
+      <div>
+        <span class="eyebrow">Zentrale Verwaltung</span>
+        <h1>Vereinsplattform</h1>
+        <p>${tenants.length} ${tenants.length === 1 ? 'Einrichtung' : 'Einrichtungen'} registriert</p>
+      </div>
+      <div class="superadmin-header-actions">
+        <button id="createTenantButton" class="button button-primary" type="button">
+          Neue Einrichtung
+        </button>
+        <button id="superadminLogoutButton" class="button button-secondary" type="button">
+          Abmelden
+        </button>
+      </div>
+    </section>
+
+    <section class="panel-card superadmin-tenant-panel">
+      <div class="panel-heading">
+        <div>
+          <span class="eyebrow">Mandanten</span>
+          <h2>Vereine und Einrichtungen</h2>
+        </div>
+      </div>
+      <div class="superadmin-tenant-list">
+        ${tenants.length ? tenants.map(renderTenantCard_).join('') : `
+          <div class="admin-empty-note">
+            Noch keine Einrichtung vorhanden.
+          </div>
+        `}
+      </div>
+    </section>
+
+    <div id="superadminDialogRoot"></div>
+  `;
+
+  document
+    .getElementById('createTenantButton')
+    .addEventListener('click', () => openCreateDialog_(elements, token));
+
+  document
+    .getElementById('superadminLogoutButton')
+    .addEventListener('click', async () => {
+      try {
+        await apiPost('superadminlogout', {}, token);
+      } finally {
+        clearToken_();
+        renderLogin_(elements);
+      }
+    });
+
+  elements.content
+    .querySelectorAll('[data-open-tenant]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        window.location.href = createTenantUrl(button.dataset.openTenant);
+      });
+    });
+
+  elements.content
+    .querySelectorAll('[data-edit-tenant]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        const tenant = tenants.find(item => item.tenant === button.dataset.editTenant);
+        openEditDialog_(elements, token, tenant);
+      });
+    });
+
+  elements.content
+    .querySelectorAll('[data-delete-tenant]')
+    .forEach(button => {
+      button.addEventListener('click', () => {
+        openDeleteDialog_(elements, token, button.dataset.deleteTenant);
+      });
+    });
+}
+
+function renderTenantCard_(tenant) {
+  const status = String(tenant.status || '').toLowerCase();
+
+  return `
+    <article class="superadmin-tenant-card">
+      <div class="superadmin-tenant-main">
+        <div class="superadmin-tenant-mark" aria-hidden="true">
+          ${escapeHtml_(String(tenant.name || tenant.tenant).slice(0, 1).toUpperCase())}
+        </div>
+        <div>
+          <div class="superadmin-tenant-title-row">
+            <h3>${escapeHtml_(tenant.name)}</h3>
+            <span class="status-badge ${status === 'aktiv' ? 'is-open' : 'is-closed'}">
+              ${escapeHtml_(tenant.status)}
+            </span>
+          </div>
+          <p>/${escapeHtml_(tenant.tenant)}/</p>
+        </div>
+      </div>
+      <div class="superadmin-tenant-actions">
+        <button class="button button-primary" type="button" data-open-tenant="${escapeHtml_(tenant.tenant)}">
+          Öffnen
+        </button>
+        <button class="button button-secondary" type="button" data-edit-tenant="${escapeHtml_(tenant.tenant)}">
+          Bearbeiten
+        </button>
+        <button class="button button-danger" type="button" data-delete-tenant="${escapeHtml_(tenant.tenant)}">
+          Entfernen
+        </button>
+      </div>
+    </article>
+  `;
+}
+
+function openCreateDialog_(elements, token) {
+  renderDialog_(`
+    <div class="dialog-header">
+      <div><span class="eyebrow">Neue Einrichtung</span><h2>Verein anlegen</h2></div>
+      <button class="icon-button" type="button" data-close-dialog>×</button>
+    </div>
+    <form id="createTenantForm" class="dialog-form">
+      <label class="form-field"><span>Einrichtungskennung</span><input name="tenant" placeholder="sportverein-musterstadt" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*"></label>
+      <label class="form-field"><span>Name</span><input name="name" required></label>
+      <label class="form-field"><span>Adminpasswort</span><input name="password" type="password" minlength="8" required></label>
+      <div class="form-grid-two">
+        <label class="form-field"><span>Starttag Vereinsjahr</span><input name="startTag" type="number" min="1" max="31" value="1" required></label>
+        <label class="form-field"><span>Startmonat Vereinsjahr</span><input name="startMonat" type="number" min="1" max="12" value="8" required></label>
+      </div>
+      <label class="checkbox-field"><input name="punkteAktiv" type="checkbox"><span>Punktesystem aktivieren</span></label>
+      <div id="superadminFormError" class="form-error" hidden></div>
+      <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Abbrechen</button><button class="button button-primary" type="submit">Einrichtung anlegen</button></div>
+    </form>
+  `);
+
+  document.getElementById('createTenantForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.startTag = Number(data.startTag);
+    data.startMonat = Number(data.startMonat);
+    data.punkteAktiv = form.elements.punkteAktiv.checked;
+    await submitDialogAction_(form, async () => {
+      await apiPost('superadmincreatetenant', { data }, token);
+      closeDialog_();
+      await renderDashboard_(elements, token);
+    });
+  });
+}
+
+function openEditDialog_(elements, token, tenant) {
+  if (!tenant) return;
+
+  renderDialog_(`
+    <div class="dialog-header"><div><span class="eyebrow">Einrichtung</span><h2>Bearbeiten</h2></div><button class="icon-button" type="button" data-close-dialog>×</button></div>
+    <form id="editTenantForm" class="dialog-form">
+      <input name="originalTenant" type="hidden" value="${escapeHtml_(tenant.tenant)}">
+      <label class="form-field"><span>Einrichtungskennung</span><input name="tenant" value="${escapeHtml_(tenant.tenant)}" required></label>
+      <label class="form-field"><span>Name</span><input name="name" value="${escapeHtml_(tenant.name)}" required></label>
+      <label class="form-field"><span>Google-Sheet-ID</span><input name="sheetId" value="${escapeHtml_(tenant.sheetId)}" required></label>
+      <label class="form-field"><span>Status</span><select name="status">${['aktiv','testbetrieb','gesperrt','archiviert'].map(status => `<option value="${status}" ${tenant.status === status ? 'selected' : ''}>${status}</option>`).join('')}</select></label>
+      <div id="superadminFormError" class="form-error" hidden></div>
+      <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Abbrechen</button><button class="button button-primary" type="submit">Speichern</button></div>
+    </form>
+  `);
+
+  document.getElementById('editTenantForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    await submitDialogAction_(form, async () => {
+      await apiPost('superadminupdatetenant', { data }, token);
+      closeDialog_();
+      await renderDashboard_(elements, token);
+    });
+  });
+}
+
+function openDeleteDialog_(elements, token, tenant) {
+  renderDialog_(`
+    <div class="dialog-header"><div><span class="eyebrow">Sicherheitsabfrage</span><h2>Einrichtung entfernen</h2></div><button class="icon-button" type="button" data-close-dialog>×</button></div>
+    <form id="deleteTenantForm" class="dialog-form">
+      <p>Die zentrale Registrierung wird entfernt. Die zugehörige Google-Tabelle bleibt bestehen.</p>
+      <label class="form-field"><span>Zur Bestätigung „${escapeHtml_(tenant)}“ eingeben</span><input name="confirmation" required autocomplete="off"></label>
+      <div id="superadminFormError" class="form-error" hidden></div>
+      <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Abbrechen</button><button class="button button-danger" type="submit">Einrichtung entfernen</button></div>
+    </form>
+  `);
+
+  document.getElementById('deleteTenantForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await submitDialogAction_(form, async () => {
+      await apiPost('superadmindeletetenant', {
+        targetTenant: tenant,
+        confirmation: form.elements.confirmation.value
+      }, token);
+      closeDialog_();
+      await renderDashboard_(elements, token);
+    });
+  });
+}
+
+function renderDialog_(content) {
+  const root = document.getElementById('superadminDialogRoot');
+  root.innerHTML = `<div class="dialog-backdrop"><section class="dialog-card" role="dialog" aria-modal="true">${content}</section></div>`;
+  root.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', closeDialog_));
+}
+
+function closeDialog_() {
+  const root = document.getElementById('superadminDialogRoot');
+  if (root) root.innerHTML = '';
+}
+
+async function submitDialogAction_(form, action) {
+  const button = form.querySelector('button[type="submit"]');
+  const error = form.querySelector('#superadminFormError');
+  button.disabled = true;
+  error.hidden = true;
+  try {
+    await action();
+  } catch (submitError) {
+    error.textContent = submitError.message;
+    error.hidden = false;
+    button.disabled = false;
+  }
+}
+
+function getToken_() {
+  return String(sessionStorage.getItem(STORAGE_KEY) || '').trim();
+}
+
+function setToken_(token) {
+  sessionStorage.setItem(STORAGE_KEY, String(token || '').trim());
+}
+
+function clearToken_() {
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
+function escapeHtml_(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
