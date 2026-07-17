@@ -17,7 +17,11 @@ import {
 } from './auth.js';
 
 import {
-  refreshStore
+  refreshStore,
+  addEventOptimistic,
+  createStoreBackup,
+  restoreStoreBackup,
+  persistStoreCache
 } from './store.js';
 
 const archiveState = {
@@ -919,35 +923,71 @@ async function restoreArchivedEvent(
       )
     );
 
-  archiveState.overview
-    .veranstaltungen =
-    (
-      archiveState.overview
-        .veranstaltungen || []
-    )
-      .filter(event =>
-        event.id !==
+  const storeBackup =
+    createStoreBackup();
+
+  try {
+    let details =
+      archiveState.details.get(
         eventId
       );
 
-  archiveState.overview
-    .anzahl.veranstaltungen =
+    if (!details) {
+      details =
+        await apiPost(
+          'archiveeventdetails',
+          {
+            id:
+              eventId
+          },
+          getStoredToken()
+        );
+
+      archiveState.details.set(
+        eventId,
+        details
+      );
+    }
+
+    const restoredEvent =
+      createRestoredFrontendEvent_(
+        details
+      );
+
+    addEventOptimistic(
+      restoredEvent
+    );
+
+    persistStoreCache();
+
     archiveState.overview
-      .veranstaltungen.length;
+      .veranstaltungen =
+      (
+        archiveState.overview
+          .veranstaltungen || []
+      )
+        .filter(event =>
+          event.id !==
+          eventId
+        );
 
-  archiveState.details.delete(
-    eventId
-  );
+    archiveState.overview
+      .anzahl.veranstaltungen =
+      archiveState.overview
+        .veranstaltungen.length;
 
-  archiveState.openEventId =
-    '';
+    archiveState.details.delete(
+      eventId
+    );
 
-  renderArchiveOverview(
-    contentElement,
-    options
-  );
+    archiveState.openEventId =
+      '';
 
-  try {
+    renderArchiveOverview(
+      contentElement,
+      options
+    );
+
     await apiPost(
       'restoreevent',
       {
@@ -957,19 +997,34 @@ async function restoreArchivedEvent(
       getStoredToken()
     );
 
-    refreshStore()
+    window.setTimeout(
+      () => {
+        refreshStore()
+          .catch(error =>
+            console.warn(
+              'Die Übersicht konnte nach der Wiederherstellung nicht sofort aktualisiert werden.',
+              error
+            )
+          );
+      },
+      12000
+    );
+
+    loadArchiveOverview(
+      contentElement,
+      options
+    )
       .catch(error =>
         console.warn(
-          'Die öffentliche Übersicht konnte nach der Wiederherstellung nicht sofort aktualisiert werden.',
+          'Das Archiv konnte nach der Wiederherstellung nicht sofort aktualisiert werden.',
           error
         )
       );
-
-    await loadArchiveOverview(
-      contentElement,
-      options
-    );
   } catch (error) {
+    restoreStoreBackup(
+      storeBackup
+    );
+
     archiveState.overview =
       overviewBackup;
 
@@ -986,6 +1041,140 @@ async function restoreArchivedEvent(
     );
   }
 }
+
+function createRestoredFrontendEvent_(
+  details
+) {
+  const event =
+    details.veranstaltung || {};
+
+  const lists =
+    (
+      details.listen || []
+    ).map(list => {
+      const entries =
+        list.eintragungen || [];
+
+      const occupied =
+        calculateRestoredOccupied_(
+          list,
+          entries
+        );
+
+      const maximum =
+        Number(
+          list.anzahl || 0
+        );
+
+      return {
+        ...list,
+        veranstaltungId:
+          event.id,
+        eintragungen:
+          entries,
+        belegt:
+          occupied,
+        frei:
+          maximum > 0
+            ? Math.max(
+                maximum -
+                occupied,
+                0
+              )
+            : null,
+        voll:
+          maximum > 0 &&
+          occupied >=
+            maximum
+      };
+    });
+
+  return {
+    ...event,
+    listen:
+      lists,
+    anzahlListen:
+      lists.length,
+    anzahlEintragungen:
+      lists.reduce(
+        (sum, list) =>
+          sum +
+          (
+            list.eintragungen || []
+          ).length,
+        0
+      )
+  };
+}
+
+function calculateRestoredOccupied_(
+  list,
+  entries
+) {
+  const type =
+    String(
+      list.typ || ''
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/ä/g, 'ae')
+      .replace(/ö/g, 'oe')
+      .replace(/ü/g, 'ue')
+      .replace(/ß/g, 'ss')
+      .replace(/[_\s]+/g, '-');
+
+  const quantityBased =
+    type !==
+      'helfereinsatz' ||
+    entries.some(entry => {
+      const quantity =
+        Number(
+          entry.menge
+        );
+
+      return (
+        String(
+          entry.beitrag || ''
+        ).trim() !==
+          '' ||
+        (
+          Number.isFinite(
+            quantity
+          ) &&
+          quantity > 1
+        )
+      );
+    });
+
+  if (!quantityBased) {
+    return entries.length;
+  }
+
+  return entries.reduce(
+    (sum, entry) => {
+      const quantity =
+        Number(
+          entry.menge
+        );
+
+      return (
+        sum +
+        (
+          Number.isFinite(
+            quantity
+          ) &&
+          quantity > 0
+            ? Math.floor(
+                quantity
+              )
+            : 1
+        )
+      );
+    },
+    0
+  );
+}
+
 
 function filterArchivedEvents(
   events
