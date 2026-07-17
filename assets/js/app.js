@@ -44,6 +44,10 @@ import {
   renderArchivePage
 } from './archive.js';
 
+import {
+  validateSession
+} from './auth.js';
+
 const elements = {
   app:
     document.getElementById('app'),
@@ -72,6 +76,8 @@ document.addEventListener(
 
 async function initialize() {
   bindNavigation();
+  bindAdminSessionNavigation();
+  hideArchiveNavigation();
   registerRoutes();
 
   const hasCachedData =
@@ -136,6 +142,52 @@ async function initialize() {
     );
 
     renderError(error);
+  }
+}
+
+function bindAdminSessionNavigation() {
+  window.addEventListener(
+    'admin-session-changed',
+    event => {
+      setArchiveNavigationVisibility(
+        event &&
+        event.detail &&
+        event.detail.loggedIn ===
+          true
+      );
+    }
+  );
+
+  validateSession()
+    .then(session =>
+      setArchiveNavigationVisibility(
+        Boolean(
+          session
+        )
+      )
+    )
+    .catch(() =>
+      hideArchiveNavigation()
+    );
+}
+
+function hideArchiveNavigation() {
+  setArchiveNavigationVisibility(
+    false
+  );
+}
+
+function setArchiveNavigationVisibility(
+  visible
+) {
+  const archiveLink =
+    document.querySelector(
+      '[data-route-link="archive"]'
+    );
+
+  if (archiveLink) {
+    archiveLink.hidden =
+      !visible;
   }
 }
 
