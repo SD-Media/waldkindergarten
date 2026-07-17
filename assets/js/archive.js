@@ -6,7 +6,8 @@
  */
 
 import {
-  apiPost
+  apiPost,
+  getTenant
 } from './api.js';
 
 import {
@@ -180,8 +181,21 @@ async function loadArchiveOverview(
   contentElement,
   options
 ) {
-  contentElement.innerHTML =
-    createArchiveLoadingMarkup();
+  const cached =
+    readArchiveSessionCache_();
+
+  if (cached) {
+    archiveState.overview =
+      cached;
+
+    renderArchiveOverview(
+      contentElement,
+      options
+    );
+  } else {
+    contentElement.innerHTML =
+      createArchiveLoadingMarkup();
+  }
 
   try {
     archiveState.overview =
@@ -191,11 +205,23 @@ async function loadArchiveOverview(
         getStoredToken()
       );
 
+    writeArchiveSessionCache_(
+      archiveState.overview
+    );
+
     renderArchiveOverview(
       contentElement,
       options
     );
   } catch (error) {
+    if (cached) {
+      console.warn(
+        'Archivaktualisierung fehlgeschlagen; der letzte Sitzungsstand bleibt sichtbar.',
+        error
+      );
+
+      return;
+    }
     contentElement.innerHTML = `
       <section class="error-card">
         <span class="eyebrow">Archiv</span>
@@ -1103,3 +1129,66 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+function getArchiveSessionCacheKey_() {
+  return (
+    'vereinsverwaltung_archive_cache_' +
+    getTenant()
+  );
+}
+
+function readArchiveSessionCache_() {
+  try {
+    const raw =
+      sessionStorage.getItem(
+        getArchiveSessionCacheKey_()
+      );
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed =
+      JSON.parse(
+        raw
+      );
+
+    if (
+      !parsed ||
+      !parsed.data ||
+      Date.now() -
+        Number(
+          parsed.savedAt || 0
+        ) >
+        10 * 60 * 1000
+    ) {
+      return null;
+    }
+
+    return parsed.data;
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeArchiveSessionCache_(
+  data
+) {
+  try {
+    sessionStorage.setItem(
+      getArchiveSessionCacheKey_(),
+      JSON.stringify({
+        data:
+          data,
+        savedAt:
+          Date.now()
+      })
+    );
+  } catch (error) {
+    console.warn(
+      'Archivcache konnte nicht gespeichert werden.',
+      error
+    );
+  }
+}
+
