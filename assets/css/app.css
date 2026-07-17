@@ -3685,3 +3685,17 @@ a:focus-visible {
     max-height: 300px;
   }
 }
+
+
+/* =========================================================
+   Korrekturen 3.6
+   ========================================================= */
+
+.category-management-row {
+  grid-template-columns:
+    auto minmax(0, 1fr);
+}
+
+.category-color-dot {
+  flex: 0 0 auto;
+}
