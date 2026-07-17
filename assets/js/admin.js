@@ -1206,12 +1206,6 @@ function renderCategoryManagementContent(
           </div>
         </label>
 
-        <input
-          name="icon"
-          type="hidden"
-          value="circle"
-        >
-
         <label class="form-field">
           <span>Status</span>
 
@@ -1469,8 +1463,6 @@ function renderCategoryManagementContent(
           payload.bezeichnung,
         farbe:
           payload.farbe,
-        icon:
-          payload.icon,
         status:
           payload.status,
         aktiv:
