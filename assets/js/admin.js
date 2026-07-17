@@ -57,7 +57,7 @@ export async function renderAdminPage(
 
   setPageHeading(
     'Administration',
-    'Veranstaltungen, Einsätze und Eintragungen verwalten'
+    'Veranstaltungen, Listen und Eintragungen verwalten'
   );
 
   contentElement.innerHTML =
@@ -292,7 +292,7 @@ function renderAdminDashboard(
 
           ${adminOverviewItem(
             totals.lists,
-            'Einsätze / Listen'
+            'Listen'
           )}
 
           ${adminOverviewItem(
@@ -460,7 +460,7 @@ function renderAdminEventCard(
               : ''}
 
             ${adminMeta(
-              'Einsätze / Listen',
+              'Listen',
               lists.length
             )}
 
@@ -491,8 +491,8 @@ function renderAdminEventCard(
           <button
             type="button"
             class="icon-action"
-            title="Veranstaltung mit allen Einsätzen drucken"
-            aria-label="Veranstaltung mit allen Einsätzen drucken"
+            title="Veranstaltung mit allen Listen drucken"
+            aria-label="Veranstaltung mit allen Listen drucken"
             data-admin-print-event="${escapeHtml(event.id)}"
           >
             ⎙
@@ -530,7 +530,7 @@ function renderAdminEventCard(
       <div class="admin-event-children">
         <div class="admin-child-toolbar">
           <strong>
-            Zugeordnete Einsätze und Listen
+            Zugeordnete Listen
           </strong>
 
           <button
@@ -538,7 +538,7 @@ function renderAdminEventCard(
             class="button button-secondary"
             data-admin-create-list="${escapeHtml(event.id)}"
           >
-            + Einsatz oder Liste
+            + Liste
           </button>
         </div>
 
@@ -558,7 +558,7 @@ function renderAdminEventCard(
           `
           : `
             <div class="admin-empty-child">
-              Noch kein Einsatz und keine Liste angelegt.
+              Noch kein Liste angelegt.
             </div>
           `}
       </div>
@@ -610,7 +610,7 @@ function renderAdminListRow(
               ${escapeHtml(
                 list.kategorie ||
                 list.typ ||
-                'Einsatz'
+                'Liste'
               )}
             </span>
           </div>
@@ -670,8 +670,8 @@ function renderAdminListRow(
         <button
           type="button"
           class="icon-action"
-          title="Nur diesen Einsatz drucken"
-          aria-label="Nur diesen Einsatz drucken"
+          title="Nur diese Liste drucken"
+          aria-label="Nur diese Liste drucken"
           data-admin-print-list="${escapeHtml(list.id)}"
         >
           ⎙
@@ -1172,14 +1172,25 @@ function openAdminGuideDialog(
         <div class="admin-guide-content">
           <section>
             <h3>Veranstaltungen</h3>
-            <p>Veranstaltungen bilden den Rahmen für alle Einsätze und Listen.</p>
+            <p>Veranstaltungen bilden den Rahmen für alle Listen.</p>
             <p>Lege zuerst immer eine Veranstaltung an. Anschließend kannst du für diese Veranstaltung beliebig viele Helfereinsätze, Kuchenlisten, Sachspendenlisten oder weitere Listen hinzufügen.</p>
           </section>
 
           <section>
-            <h3>Einsätze &amp; Listen</h3>
-            <p>Über „Einsatz oder Liste“ kannst du neue Helfereinsätze oder Mitbringlisten anlegen.</p>
+            <h3>Listen</h3>
+            <p>Über „Liste“ kannst du neue Helferlisten, Kuchenlisten, Sachspendenlisten oder Mitbringlisten anlegen.</p>
             <p>Jede Liste kann bearbeitet, kopiert oder gelöscht werden.</p>
+          </section>
+
+          <section>
+            <h3>Drucken</h3>
+            <p>Über das Drucksymbol an einer Veranstaltung druckst du die komplette Veranstaltung mit allen zugehörigen Listen und Eintragungen.</p>
+            <p>Über das Drucksymbol direkt an einer Liste wird nur diese einzelne Liste gedruckt. Die Punkteübersicht wird in der aktuell gewählten Sortierung ausgegeben.</p>
+          </section>
+
+          <section>
+            <h3>Serienveranstaltungen</h3>
+            <p>Beim Anlegen einer Veranstaltung kannst du optional eine monatliche oder jährliche Wiederholung und die Anzahl der Termine festlegen.</p>
           </section>
 
           <section>
@@ -2352,6 +2363,24 @@ function openEventForm(
             </select>
           </label>
 
+          ${!editing ? `
+            <fieldset class="series-event-fieldset">
+              <legend>Serienveranstaltung <small>optional</small></legend>
+              <label class="form-field">
+                <span>Wiederholung</span>
+                <select name="seriesType">
+                  <option value="none">Keine Wiederholung</option>
+                  <option value="monthly">Monatlich</option>
+                  <option value="yearly">Jährlich</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span>Anzahl Termine inklusive erstem Termin</span>
+                <input name="seriesCount" type="number" min="2" max="60" value="2">
+              </label>
+            </fieldset>
+          ` : ''}
+
           <div
             id="adminEventError"
             class="form-error"
@@ -2427,6 +2456,13 @@ function openEventForm(
 
       errorBox.hidden =
         true;
+
+      const seriesType = !editing && form.elements.seriesType
+        ? form.elements.seriesType.value
+        : 'none';
+      const seriesCount = !editing && seriesType !== 'none'
+        ? Math.max(2, Math.min(60, Number(form.elements.seriesCount.value || 2)))
+        : 1;
 
       const payload = {
         titel:
@@ -2536,6 +2572,15 @@ function openEventForm(
           );
         }
 
+        if (!editing && seriesType !== 'none' && seriesCount > 1) {
+          for (let seriesIndex = 1; seriesIndex < seriesCount; seriesIndex++) {
+            const seriesPayload = createSeriesEventPayload_(payload, seriesType, seriesIndex);
+            await apiPost('createevent', { data: seriesPayload }, getStoredToken());
+          }
+          await refreshStore({ force: true });
+          renderAdminDashboard(contentElement, options);
+        }
+
         if (!editing) {
           const addNow =
             window.confirm(
@@ -2588,6 +2633,24 @@ function openEventForm(
       }
     }
   );
+}
+
+
+function createSeriesEventPayload_(payload, seriesType, offset) {
+  const clone = { ...payload };
+  clone.startdatum = shiftGermanDate_(payload.startdatum, seriesType, offset);
+  clone.enddatum = payload.enddatum ? shiftGermanDate_(payload.enddatum, seriesType, offset) : '';
+  return clone;
+}
+
+function shiftGermanDate_(value, seriesType, offset) {
+  const match = String(value || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!match) return value;
+  const date = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  if (seriesType === 'monthly') date.setMonth(date.getMonth() + offset);
+  if (seriesType === 'yearly') date.setFullYear(date.getFullYear() + offset);
+  return String(date.getDate()).padStart(2, '0') + '.' +
+    String(date.getMonth() + 1).padStart(2, '0') + '.' + date.getFullYear();
 }
 
 function normalizeAdminListType_(
@@ -2662,8 +2725,8 @@ function openListForm(
 
             <h2>
               ${editing
-                ? 'Einsatz oder Liste bearbeiten'
-                : 'Einsatz oder Liste anlegen'}
+                ? 'Liste bearbeiten'
+                : 'Liste anlegen'}
             </h2>
           </div>
 
@@ -3862,6 +3925,7 @@ function printCurrentPointsOverview_() {
     'Soll-/Ist-Liste',
     `
       <header class="print-document-header">
+        ${renderPrintLogo_(data)}
         <h1>Soll-/Ist-Liste</h1>
         <p>${escapeHtml(getPrintTenantName_(data))}</p>
         <p>Sortierung: ${escapeHtml(getPointsSortLabel_(adminState.pointsSort))}</p>
@@ -3904,7 +3968,8 @@ function printSingleEvent_(eventId) {
     event.titel || 'Veranstaltung',
     `
       <header class="print-document-header">
-        <h1>Veranstaltung und Einsätze</h1>
+        ${renderPrintLogo_(data)}
+        <h1>Veranstaltung und Listen</h1>
         <p>${escapeHtml(getPrintTenantName_(data))}</p>
         <p>Stand: ${escapeHtml(new Date().toLocaleString('de-DE'))}</p>
       </header>
@@ -3923,7 +3988,7 @@ function printSingleList_(listId) {
 
   if (!result) {
     window.alert(
-      'Der Einsatz wurde nicht gefunden.'
+      'Die Liste wurde nicht gefunden.'
     );
     return;
   }
@@ -3933,10 +3998,11 @@ function printSingleList_(listId) {
       .frontendData || {};
 
   printInCurrentPage_(
-    result.list.titel || 'Einsatz',
+    result.list.titel || 'Liste',
     `
       <header class="print-document-header">
-        <h1>${escapeHtml(result.list.titel || 'Einsatz')}</h1>
+        ${renderPrintLogo_(data)}
+        <h1>${escapeHtml(result.list.titel || 'Liste')}</h1>
         <p>${escapeHtml(getPrintTenantName_(data))}</p>
         <p>Veranstaltung: ${escapeHtml(result.event.titel || 'Ohne Titel')}</p>
         <p>Stand: ${escapeHtml(new Date().toLocaleString('de-DE'))}</p>
@@ -3986,7 +4052,7 @@ function renderPrintableEvent_(event, settings) {
 
       ${lists.length
         ? lists.map(list => renderPrintableList_(list, settings)).join('')
-        : '<p class="print-empty">Keine Einsätze oder Listen vorhanden.</p>'}
+        : '<p class="print-empty">Keine Listen vorhanden.</p>'}
     </section>
   `;
 }
@@ -4007,7 +4073,7 @@ function renderPrintableList_(list, settings) {
       <div class="print-list-heading">
         <div>
           <h3>${escapeHtml(list.titel || 'Ohne Titel')}</h3>
-          <p>${escapeHtml(list.kategorie || list.typ || 'Einsatz')}</p>
+          <p>${escapeHtml(list.kategorie || list.typ || 'Liste')}</p>
         </div>
         <div class="print-list-facts">
           ${list.datum ? `<span>${escapeHtml(list.datum)}</span>` : ''}
@@ -4059,6 +4125,12 @@ function formatPrintableContribution_(entry) {
   }
 
   return parts.join(' · ');
+}
+
+function renderPrintLogo_(data) {
+  const settings = data && data.einstellungen ? data.einstellungen : {};
+  const logoUrl = String(settings.logoUrl || settings.logourl || '').trim();
+  return logoUrl ? `<img class="print-logo" src="${escapeHtml(logoUrl)}" alt="Logo">` : '';
 }
 
 function getPrintTenantName_(data) {
