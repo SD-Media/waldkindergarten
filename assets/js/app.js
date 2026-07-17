@@ -3,8 +3,13 @@
  */
 
 import {
-  APP_CONFIG
+  APP_CONFIG,
+  resolveAppContext
 } from './config.js';
+
+import {
+  renderSuperAdminApp
+} from './superadmin.js';
 
 import {
   apiGet,
@@ -75,6 +80,13 @@ document.addEventListener(
 );
 
 async function initialize() {
+  const appContext = resolveAppContext();
+
+  if (appContext.mode === 'platform') {
+    await renderSuperAdminApp(elements);
+    return;
+  }
+
   bindNavigation();
   bindAdminSessionNavigation();
   hideArchiveNavigation();
