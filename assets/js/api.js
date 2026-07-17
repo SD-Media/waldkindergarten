@@ -52,10 +52,12 @@ export async function apiGet(
         APP_CONFIG.apiUrl
       );
 
-    url.searchParams.set(
-      'tenant',
-      tenant
-    );
+    if (tenant) {
+      url.searchParams.set(
+        'tenant',
+        tenant
+      );
+    }
 
     url.searchParams.set(
       'action',
@@ -133,9 +135,12 @@ export async function apiPost(
 ) {
   const body = {
     action,
-    tenant,
     ...payload
   };
+
+  if (tenant) {
+    body.tenant = tenant;
+  }
 
   if (token) {
     body.token = token;
