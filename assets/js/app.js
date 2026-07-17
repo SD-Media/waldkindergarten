@@ -366,12 +366,7 @@ async function refreshInBackground() {
 
     applyTenantConfiguration();
 
-    if (
-      getCurrentRoute() ===
-      'dashboard'
-    ) {
-      renderDashboard();
-    }
+    await renderCurrentPage();
   } catch (error) {
     console.warn(
       'Hintergrundaktualisierung fehlgeschlagen.',
