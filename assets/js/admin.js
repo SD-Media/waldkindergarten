@@ -27,7 +27,8 @@ import {
   updateListOptimistic,
   removeListOptimistic,
   removeEntryOptimistic,
-  updatePointsConfigOptimistic
+  updatePointsConfigOptimistic,
+  updateCategories
 } from './store.js';
 
 const adminState = {
@@ -596,7 +597,9 @@ function renderAdminListRow(
               : ''}
 
             ${detailText(
-              entries.length +
+              Number(
+                list.belegt || 0
+              ) +
               ' / ' +
               (
                 Number(list.anzahl || 0) >
@@ -1187,29 +1190,27 @@ function renderCategoryManagementContent(
           >
         </label>
 
-        <div class="category-color-grid">
-          <label class="form-field">
-            <span>Farbe</span>
+        <label class="form-field category-color-field">
+          <span>Farbe</span>
 
+          <div class="category-color-picker">
             <input
               name="farbe"
               type="color"
               value="#546E7A"
             >
-          </label>
 
-          <label class="form-field">
-            <span>Icon-Bezeichnung</span>
+            <span>
+              Diese Farbe kennzeichnet die Kategorie in der Übersicht.
+            </span>
+          </div>
+        </label>
 
-            <input
-              name="icon"
-              type="text"
-              maxlength="80"
-              value="circle"
-              placeholder="circle"
-            >
-          </label>
-        </div>
+        <input
+          name="icon"
+          type="hidden"
+          value="circle"
+        >
 
         <label class="form-field">
           <span>Status</span>
@@ -1346,7 +1347,7 @@ function renderCategoryManagementContent(
 
   deleteButton.addEventListener(
     'click',
-    async () => {
+    () => {
       const id =
         form.elements.id.value;
 
@@ -1362,47 +1363,74 @@ function renderCategoryManagementContent(
         return;
       }
 
-      try {
-        await apiPost(
-          'deletecategory',
-          {
-            id:
-              id
-          },
-          getStoredToken()
+      const previousCategories =
+        getStoreSnapshot()
+          .categories
+          .slice();
+
+      const optimisticCategories =
+        previousCategories.filter(
+          category =>
+            category.id !==
+            id
         );
 
-        const updated =
-          await apiPost(
-            'allcategories',
-            {},
-            getStoredToken()
+      updateCategories(
+        optimisticCategories
+      );
+
+      root.innerHTML =
+        '';
+
+      renderAdminDashboard(
+        contentElement,
+        options
+      );
+
+      apiPost(
+        'deletecategory',
+        {
+          id:
+            id
+        },
+        getStoredToken()
+      )
+        .then(() => {
+          window.setTimeout(
+            () =>
+              refreshStore()
+                .catch(error =>
+                  console.warn(
+                    'Kategorien konnten nicht sofort aktualisiert werden.',
+                    error
+                  )
+                ),
+            12000
+          );
+        })
+        .catch(error => {
+          updateCategories(
+            previousCategories
           );
 
-        await refreshStore();
+          renderAdminDashboard(
+            contentElement,
+            options
+          );
 
-        renderCategoryManagementContent(
-          root,
-          contentElement,
-          options,
-          updated
-        );
-      } catch (error) {
-        errorBox.textContent =
-          error &&
-          error.message
-            ? error.message
-            : 'Die Kategorie konnte nicht gelöscht werden.';
-
-        errorBox.hidden =
-          false;
-      }
+          window.alert(
+            error &&
+            error.message
+              ? error.message
+              : 'Die Kategorie konnte nicht gelöscht werden.'
+          );
+        });
     }
   );
 
   form.addEventListener(
     'submit',
-    async event => {
+    event => {
       event.preventDefault();
 
       const id =
@@ -1414,7 +1442,7 @@ function renderCategoryManagementContent(
         farbe:
           form.elements.farbe.value,
         icon:
-          form.elements.icon.value.trim() ||
+          form.elements.icon.value ||
           'circle',
         status:
           form.elements.status.value,
@@ -1422,69 +1450,115 @@ function renderCategoryManagementContent(
           0
       };
 
-      const submitButton =
-        form.querySelector(
-          '[type="submit"]'
+      const previousCategories =
+        getStoreSnapshot()
+          .categories
+          .slice();
+
+      const temporaryId =
+        id ||
+        (
+          'TEMP_CATEGORY_' +
+          Date.now()
         );
 
-      submitButton.disabled =
-        true;
+      const optimisticCategory = {
+        id:
+          temporaryId,
+        bezeichnung:
+          payload.bezeichnung,
+        farbe:
+          payload.farbe,
+        icon:
+          payload.icon,
+        status:
+          payload.status,
+        aktiv:
+          payload.status ===
+          'aktiv',
+        sortierung:
+          0
+      };
 
-      errorBox.hidden =
-        true;
+      const optimisticCategories =
+        id
+          ? previousCategories.map(
+              category =>
+                category.id ===
+                id
+                  ? optimisticCategory
+                  : category
+            )
+          : [
+              ...previousCategories,
+              optimisticCategory
+            ];
 
-      try {
-        await apiPost(
-          id
-            ? 'updatecategory'
-            : 'createcategory',
-          id
-            ? {
-                id:
-                  id,
-                data:
-                  payload
-              }
-            : {
-                data:
-                  payload
-              },
-          getStoredToken()
-        );
+      updateCategories(
+        optimisticCategories
+      );
 
-        const updated =
-          await apiPost(
-            'allcategories',
-            {},
-            getStoredToken()
+      root.innerHTML =
+        '';
+
+      renderAdminDashboard(
+        contentElement,
+        options
+      );
+
+      apiPost(
+        id
+          ? 'updatecategory'
+          : 'createcategory',
+        id
+          ? {
+              id:
+                id,
+              data:
+                payload
+            }
+          : {
+              data:
+                payload
+            },
+        getStoredToken()
+      )
+        .then(() => {
+          window.setTimeout(
+            () =>
+              refreshStore()
+                .then(() =>
+                  renderAdminDashboard(
+                    contentElement,
+                    options
+                  )
+                )
+                .catch(error =>
+                  console.warn(
+                    'Kategorien konnten nicht sofort aktualisiert werden.',
+                    error
+                  )
+                ),
+            12000
+          );
+        })
+        .catch(error => {
+          updateCategories(
+            previousCategories
           );
 
-        await refreshStore();
+          renderAdminDashboard(
+            contentElement,
+            options
+          );
 
-        renderAdminDashboard(
-          contentElement,
-          options
-        );
-
-        renderCategoryManagementContent(
-          root,
-          contentElement,
-          options,
-          updated
-        );
-      } catch (error) {
-        errorBox.textContent =
-          error &&
-          error.message
-            ? error.message
-            : 'Die Kategorie konnte nicht gespeichert werden.';
-
-        errorBox.hidden =
-          false;
-
-        submitButton.disabled =
-          false;
-      }
+          window.alert(
+            error &&
+            error.message
+              ? error.message
+              : 'Die Kategorie konnte nicht gespeichert werden.'
+          );
+        });
     }
   );
 
@@ -2149,7 +2223,33 @@ function openEventForm(
   );
 }
 
+function normalizeAdminListType_(
+  value
+) {
+  const normalized =
+    String(
+      value || ''
+    )
+      .trim()
+      .toLowerCase()
+      .replace(/ä/g, 'ae')
+      .replace(/ö/g, 'oe')
+      .replace(/ü/g, 'ue')
+      .replace(/ß/g, 'ss')
+      .replace(/[_\s]+/g, '-');
+
+  if (
+    normalized ===
+    'sachspende'
+  ) {
+    return 'sachspendenliste';
+  }
+
+  return normalized;
+}
+
 function openListForm(
+
   contentElement,
   options,
   event,
@@ -2167,6 +2267,13 @@ function openListForm(
 
   const categories =
     snapshot.categories || [];
+
+  const currentListType =
+    editing
+      ? normalizeAdminListType_(
+          list.typ
+        )
+      : 'helfereinsatz';
 
   const settings =
     snapshot.frontendData
@@ -2212,19 +2319,39 @@ function openListForm(
 
               <select name="typ">
                 ${[
-                  'Helfereinsatz',
-                  'Kuchenliste',
-                  'Sachspendenliste',
-                  'Freie Mitbringliste'
+                  {
+                    value:
+                      'Helfereinsatz',
+                    normalized:
+                      'helfereinsatz'
+                  },
+                  {
+                    value:
+                      'Kuchenliste',
+                    normalized:
+                      'kuchenliste'
+                  },
+                  {
+                    value:
+                      'Sachspendenliste',
+                    normalized:
+                      'sachspendenliste'
+                  },
+                  {
+                    value:
+                      'Freie Mitbringliste',
+                    normalized:
+                      'freie-mitbringliste'
+                  }
                 ].map(type => `
                   <option
-                    value="${type}"
-                    ${editing &&
-                      list.typ === type
+                    value="${type.value}"
+                    ${currentListType ===
+                      type.normalized
                       ? 'selected'
                       : ''}
                   >
-                    ${type}
+                    ${type.value}
                   </option>
                 `).join('')}
               </select>
@@ -2605,10 +2732,9 @@ function openListForm(
               ),
         belegt:
           editing
-            ? (
-                list.eintragungen ||
-                []
-              ).length
+            ? Number(
+                list.belegt || 0
+              )
             : 0,
         frei:
           payload.anzahl > 0
@@ -2616,10 +2742,9 @@ function openListForm(
                 payload.anzahl -
                 (
                   editing
-                    ? (
-                        list.eintragungen ||
-                        []
-                      ).length
+                    ? Number(
+                        list.belegt || 0
+                      )
                     : 0
                 ),
                 0
