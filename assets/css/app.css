@@ -3428,3 +3428,145 @@ a:focus-visible {
     display: grid;
   }
 }
+
+
+/* =========================================================
+   Kategorien, Mengen und Archiv 3.4
+   ========================================================= */
+
+.quantity-field-group {
+  grid-template-columns:
+    minmax(0, 1fr);
+  gap: 8px;
+}
+
+.quantity-field-group .checkbox-field {
+  width: fit-content;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.category-management-dialog {
+  max-width: 920px;
+}
+
+.category-management-layout {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 0.85fr)
+    minmax(340px, 1.15fr);
+  gap: 18px;
+  padding: 20px;
+}
+
+.category-list-panel,
+.category-editor-panel {
+  min-width: 0;
+}
+
+.category-list-heading {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.category-list-heading span {
+  color: var(--color-muted);
+}
+
+.category-management-list {
+  display: grid;
+  max-height: 470px;
+  gap: 7px;
+  overflow-y: auto;
+}
+
+.category-management-row {
+  display: grid;
+  grid-template-columns:
+    auto
+    minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  color: inherit;
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-management-row:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.category-management-row strong,
+.category-management-row small {
+  display: block;
+}
+
+.category-management-row small {
+  margin-top: 2px;
+  color: var(--color-muted);
+}
+
+.category-color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.category-editor-panel {
+  display: grid;
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid var(--color-border);
+  border-radius: 15px;
+  background: var(--color-surface-muted);
+}
+
+.category-editor-panel h3 {
+  margin: 0;
+}
+
+.category-color-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(110px, 0.35fr)
+    minmax(0, 1fr);
+  gap: 10px;
+}
+
+.category-editor-panel input[type="color"] {
+  min-height: 46px;
+  padding: 5px;
+}
+
+.category-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: flex-end;
+}
+
+.button-danger {
+  color: #a42f2f;
+  background: #fff0f0;
+}
+
+[data-route-link="archive"][hidden] {
+  display: none !important;
+}
+
+@media (max-width: 780px) {
+  .category-management-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .category-color-grid {
+    grid-template-columns: 1fr;
+  }
+}
