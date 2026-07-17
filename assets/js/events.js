@@ -32,7 +32,7 @@ export async function renderOverviewPage(
 
   setPageHeading(
     'Übersicht',
-    'Veranstaltungen, Einsätze und Listen'
+    'Veranstaltungen & Listen'
   );
 
   renderOverview(
@@ -81,7 +81,7 @@ function renderOverview(
           class="search-input"
           type="search"
           value="${escapeHtml(viewState.search)}"
-          placeholder="Veranstaltungen, Einsätze und Listen durchsuchen …"
+          placeholder="Veranstaltungen & Listen durchsuchen …"
           autocomplete="off"
         >
       </div>
@@ -138,7 +138,7 @@ function renderOverview(
                 ? 'selected'
                 : ''}
             >
-              Nur offene Einsätze
+              Nur offene Listen
             </option>
           </select>
         </label>
@@ -156,8 +156,8 @@ function renderOverview(
       ${summaryPill(
         countLists(events),
         countLists(events) === 1
-          ? 'Einsatz / Liste'
-          : 'Einsätze / Listen'
+          ? 'Liste'
+          : 'Listen'
       )}
 
       ${summaryPill(
@@ -1460,7 +1460,7 @@ function normalizeTypeLabel(value) {
       .trim();
 
   return text ||
-    'Einsatz';
+    'Liste';
 }
 
 function normalizeText(value) {
