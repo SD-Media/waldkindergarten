@@ -366,7 +366,15 @@ async function refreshInBackground() {
 
     applyTenantConfiguration();
 
-    await renderCurrentPage();
+    /*
+     * Auf der Adminroute darf ein automatisch nachlaufender
+     * Hintergrund-Refresh niemals die aktuelle Arbeitsoberfläche
+     * vollständig neu aufbauen. Geöffnete Dialoge und Formulare
+     * bleiben dadurch unangetastet.
+     */
+    if (getCurrentRoute() !== 'admin') {
+      await renderCurrentPage();
+    }
   } catch (error) {
     console.warn(
       'Hintergrundaktualisierung fehlgeschlagen.',
