@@ -352,13 +352,6 @@ function renderAdminDashboard(
           `
           : ''}
 
-      <button
-        type="button"
-        class="button button-secondary"
-        id="adminPrintCenterButton"
-      >
-        Druckcenter
-      </button>
 
       <button
         type="button"
@@ -495,6 +488,16 @@ function renderAdminEventCard(
           class="admin-card-actions"
           onclick="event.stopPropagation()"
         >
+          <button
+            type="button"
+            class="icon-action"
+            title="Veranstaltung mit allen Einsätzen drucken"
+            aria-label="Veranstaltung mit allen Einsätzen drucken"
+            data-admin-print-event="${escapeHtml(event.id)}"
+          >
+            ⎙
+          </button>
+
           <button
             type="button"
             class="icon-action archive-action"
@@ -667,6 +670,16 @@ function renderAdminListRow(
         <button
           type="button"
           class="icon-action"
+          title="Nur diesen Einsatz drucken"
+          aria-label="Nur diesen Einsatz drucken"
+          data-admin-print-list="${escapeHtml(list.id)}"
+        >
+          ⎙
+        </button>
+
+        <button
+          type="button"
+          class="icon-action"
           title="Einsatz kopieren"
           data-admin-copy-list="${escapeHtml(list.id)}"
         >
@@ -830,21 +843,6 @@ function bindAdminActions(
     );
   }
 
-  const printCenterButton =
-    contentElement.querySelector(
-      '#adminPrintCenterButton'
-    );
-
-  if (printCenterButton) {
-    printCenterButton.addEventListener(
-      'click',
-      () =>
-        openPrintCenterDialog(
-          contentElement
-        )
-    );
-  }
-
   const pointsButton =
     contentElement.querySelector(
       '#adminPointsOverviewButton'
@@ -882,6 +880,19 @@ function bindAdminActions(
           options
         );
       }
+    );
+  }
+
+  const pointsPrintButton =
+    contentElement.querySelector(
+      '#adminPrintPointsButton'
+    );
+
+  if (pointsPrintButton) {
+    pointsPrintButton.addEventListener(
+      'click',
+      () =>
+        printCurrentPointsOverview_()
     );
   }
 
@@ -958,6 +969,34 @@ function bindAdminActions(
             null
           );
         }
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-print-event]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          printSingleEvent_(
+            button.dataset.adminPrintEvent
+          )
+      );
+    });
+
+  contentElement
+    .querySelectorAll(
+      '[data-admin-print-list]'
+    )
+    .forEach(button => {
+      button.addEventListener(
+        'click',
+        () =>
+          printSingleList_(
+            button.dataset.adminPrintList
+          )
       );
     });
 
@@ -3772,105 +3811,46 @@ function findList(listId) {
 }
 
 
-function openPrintCenterDialog(
-  contentElement
-) {
-  const snapshot =
-    getStoreSnapshot();
-
+function printCurrentPointsOverview_() {
   const data =
-    snapshot.frontendData || {};
+    getStoreSnapshot()
+      .frontendData || {};
 
-  const pointsActive =
-    data.punkte &&
-    data.punkte.konfiguration &&
-    data.punkte.konfiguration.punkteAktiv === true;
+  const points =
+    data.punkte || {};
 
-  const root =
-    contentElement.querySelector(
-      '#adminDialogRoot'
-    );
+  const configuration =
+    points.konfiguration || {};
 
-  root.innerHTML = `
-    <div class="dialog-backdrop">
-      <section class="dialog-card print-center-dialog" role="dialog" aria-modal="true">
-        <div class="dialog-header">
-          <div>
-            <span class="eyebrow">Adminbereich</span>
-            <h2>Druckcenter</h2>
-          </div>
-
-          <button class="icon-button" type="button" data-close-print-center>×</button>
-        </div>
-
-        <p class="dialog-intro">
-          Wähle die gewünschte Übersicht. Anschließend öffnet sich eine druckoptimierte Ansicht.
-        </p>
-
-        <div class="print-center-options">
-          ${pointsActive
-            ? `
-              <button class="print-center-option" type="button" data-print-points>
-                <span class="print-center-option-icon">◉</span>
-                <span>
-                  <strong>Soll-/Ist-Liste</strong>
-                  <small>Punktestand aller verwendeten Namen im aktuellen Vereinsjahr</small>
-                </span>
-              </button>
-            `
-            : ''}
-
-          <button class="print-center-option" type="button" data-print-events>
-            <span class="print-center-option-icon">▤</span>
-            <span>
-              <strong>Veranstaltungen und Helfer</strong>
-              <small>Alle Veranstaltungen mit Listen, Einsätzen und eingetragenen Personen</small>
-            </span>
-          </button>
-        </div>
-
-        ${!pointsActive
-          ? `
-            <div class="admin-empty-note">
-              Die Soll-/Ist-Liste wird angezeigt, sobald das Punktesystem aktiviert ist.
-            </div>
-          `
-          : ''}
-      </section>
-    </div>
-  `;
-
-  root.querySelectorAll('[data-close-print-center]').forEach(button => {
-    button.addEventListener('click', () => {
-      root.innerHTML = '';
-    });
-  });
-
-  const pointsButton = root.querySelector('[data-print-points]');
-  if (pointsButton) {
-    pointsButton.addEventListener('click', () => printPointsOverview_(data));
+  if (
+    configuration.punkteAktiv !==
+      true
+  ) {
+    return;
   }
 
-  root.querySelector('[data-print-events]').addEventListener('click', () => {
-    printEventsOverview_(data);
-  });
-}
+  const label =
+    configuration.punkteBezeichnung ||
+    'Punkte';
 
-function printPointsOverview_(data) {
-  const points = data.punkte || {};
-  const configuration = points.konfiguration || {};
-  const label = configuration.punkteBezeichnung || 'Punkte';
-  const people = sortAdminPointsPeople(points.personen || [], 'name-asc');
+  const people =
+    sortAdminPointsPeople(
+      points.personen || [],
+      adminState.pointsSort
+    );
 
   const rows = people.length
     ? people.map(person => {
-        const difference = Number(person.punkte || 0) - Number(person.sollwert || 0);
+        const difference =
+          Number(person.punkte || 0) -
+          Number(person.sollwert || 0);
+
         return `
           <tr>
             <td><strong>${escapeHtml(person.name)}</strong></td>
-            <td>${formatAdminPointsNumber(person.sollwert)}</td>
-            <td>${formatAdminPointsNumber(person.punkte)}</td>
-            <td>${difference > 0 ? '+' : ''}${formatAdminPointsNumber(difference)}</td>
+            <td>${formatAdminPointsNumber(person.sollwert)} ${escapeHtml(label)}</td>
+            <td>${formatAdminPointsNumber(person.punkte)} ${escapeHtml(label)}</td>
+            <td>${difference > 0 ? '+' : ''}${formatAdminPointsNumber(difference)} ${escapeHtml(label)}</td>
             <td>${escapeHtml(person.anzahlEintragungen || 0)}</td>
             <td>${person.sollwertErreicht ? 'Erfüllt' : 'Offen'}</td>
           </tr>
@@ -3878,12 +3858,13 @@ function printPointsOverview_(data) {
       }).join('')
     : '<tr><td colspan="6">Noch keine Punkte-Eintragungen vorhanden.</td></tr>';
 
-  openPrintWindow_(
+  printInCurrentPage_(
     'Soll-/Ist-Liste',
     `
       <header class="print-document-header">
         <h1>Soll-/Ist-Liste</h1>
         <p>${escapeHtml(getPrintTenantName_(data))}</p>
+        <p>Sortierung: ${escapeHtml(getPointsSortLabel_(adminState.pointsSort))}</p>
         <p>Aktuelles Vereinsjahr · Einheit: ${escapeHtml(label)}</p>
       </header>
 
@@ -3904,30 +3885,86 @@ function printPointsOverview_(data) {
   );
 }
 
-function printEventsOverview_(data) {
-  const events = getAllEvents().slice().sort(compareEvents);
-  const settings = data.einstellungen || {};
+function printSingleEvent_(eventId) {
+  const event =
+    findEvent(eventId);
 
-  const eventMarkup = events.length
-    ? events.map(event => renderPrintableEvent_(event, settings)).join('')
-    : '<p>Keine Veranstaltungen vorhanden.</p>';
+  if (!event) {
+    window.alert(
+      'Die Veranstaltung wurde nicht gefunden.'
+    );
+    return;
+  }
 
-  openPrintWindow_(
-    'Veranstaltungen und Helfer',
+  const data =
+    getStoreSnapshot()
+      .frontendData || {};
+
+  printInCurrentPage_(
+    event.titel || 'Veranstaltung',
     `
       <header class="print-document-header">
-        <h1>Veranstaltungen und Helfer</h1>
+        <h1>Veranstaltung und Einsätze</h1>
         <p>${escapeHtml(getPrintTenantName_(data))}</p>
         <p>Stand: ${escapeHtml(new Date().toLocaleString('de-DE'))}</p>
       </header>
 
-      <main class="print-events">${eventMarkup}</main>
+      ${renderPrintableEvent_(
+        event,
+        data.einstellungen || {}
+      )}
+    `
+  );
+}
+
+function printSingleList_(listId) {
+  const result =
+    findList(listId);
+
+  if (!result) {
+    window.alert(
+      'Der Einsatz wurde nicht gefunden.'
+    );
+    return;
+  }
+
+  const data =
+    getStoreSnapshot()
+      .frontendData || {};
+
+  printInCurrentPage_(
+    result.list.titel || 'Einsatz',
+    `
+      <header class="print-document-header">
+        <h1>${escapeHtml(result.list.titel || 'Einsatz')}</h1>
+        <p>${escapeHtml(getPrintTenantName_(data))}</p>
+        <p>Veranstaltung: ${escapeHtml(result.event.titel || 'Ohne Titel')}</p>
+        <p>Stand: ${escapeHtml(new Date().toLocaleString('de-DE'))}</p>
+      </header>
+
+      <section class="print-event-block print-single-list-event">
+        <header class="print-event-header">
+          <div>
+            <span>Veranstaltung</span>
+            <h2>${escapeHtml(result.event.titel || 'Ohne Titel')}</h2>
+          </div>
+          <strong>${escapeHtml(result.event.startdatum || 'Ohne Datum')}</strong>
+        </header>
+
+        ${renderPrintableList_(
+          result.list,
+          data.einstellungen || {}
+        )}
+      </section>
     `
   );
 }
 
 function renderPrintableEvent_(event, settings) {
-  const lists = (event.listen || []).slice().sort(compareLists);
+  const lists =
+    (event.listen || [])
+      .slice()
+      .sort(compareLists);
 
   return `
     <section class="print-event-block">
@@ -3955,8 +3992,15 @@ function renderPrintableEvent_(event, settings) {
 }
 
 function renderPrintableList_(list, settings) {
-  const entries = Array.isArray(list.eintragungen) ? list.eintragungen : [];
-  const capacity = Number(list.anzahl || 0) > 0 ? Number(list.anzahl) : 'unbegrenzt';
+  const entries =
+    Array.isArray(list.eintragungen)
+      ? list.eintragungen
+      : [];
+
+  const capacity =
+    Number(list.anzahl || 0) > 0
+      ? Number(list.anzahl)
+      : 'unbegrenzt';
 
   return `
     <section class="print-list-block">
@@ -3997,80 +4041,127 @@ function renderPrintableList_(list, settings) {
 
 function formatPrintableContribution_(entry) {
   const parts = [];
-  if (entry.beitrag) parts.push(String(entry.beitrag));
-  if (entry.menge !== '' && entry.menge !== null && entry.menge !== undefined) {
-    parts.push('Menge: ' + entry.menge);
+
+  if (entry.beitrag) {
+    parts.push(
+      String(entry.beitrag)
+    );
   }
+
+  if (
+    entry.menge !== '' &&
+    entry.menge !== null &&
+    entry.menge !== undefined
+  ) {
+    parts.push(
+      'Menge: ' + entry.menge
+    );
+  }
+
   return parts.join(' · ');
 }
 
 function getPrintTenantName_(data) {
-  return adminState.session && adminState.session.einrichtungsname
-    ? adminState.session.einrichtungsname
-    : data.einrichtungsname || 'Vereinsverwaltung';
+  return adminState.session &&
+    adminState.session.einrichtungsname
+      ? adminState.session.einrichtungsname
+      : data.einrichtungsname ||
+        'Vereinsverwaltung';
 }
 
-function openPrintWindow_(title, body) {
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer');
+function getPointsSortLabel_(sort) {
+  const labels = {
+    'name-asc': 'Name A–Z',
+    'name-desc': 'Name Z–A',
+    'points-desc': 'Istpunkte – höchste zuerst',
+    'points-asc': 'Istpunkte – niedrigste zuerst',
+    'remaining-desc': 'Fehlende Punkte – höchste zuerst',
+    'status-open': 'Offene zuerst',
+    'only-open': 'Nur offene'
+  };
 
-  if (!printWindow) {
-    window.alert('Das Druckfenster wurde vom Browser blockiert. Bitte Pop-ups für diese Seite erlauben.');
-    return;
+  return labels[sort] ||
+    labels['name-asc'];
+}
+
+function printInCurrentPage_(title, body) {
+  const existingRoot =
+    document.getElementById(
+      'adminPrintRoot'
+    );
+
+  if (existingRoot) {
+    existingRoot.remove();
   }
 
-  printWindow.document.open();
-  printWindow.document.write(`<!DOCTYPE html>
-    <html lang="de">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>${escapeHtml(title)}</title>
-        <style>
-          @page { size: A4 portrait; margin: 14mm; }
-          * { box-sizing: border-box; }
-          body { margin: 0; color: #17201d; font-family: Arial, sans-serif; font-size: 10.5pt; line-height: 1.4; }
-          h1, h2, h3, p { margin-top: 0; }
-          .print-document-header { margin-bottom: 22px; padding-bottom: 12px; border-bottom: 2px solid #1f4b3f; }
-          .print-document-header h1 { margin-bottom: 4px; font-size: 22pt; }
-          .print-document-header p { margin: 2px 0; color: #53605b; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { padding: 7px 8px; border: 1px solid #ccd5d1; text-align: left; vertical-align: top; }
-          th { background: #edf3f0; font-size: 9pt; }
-          tr { break-inside: avoid; page-break-inside: avoid; }
-          .print-event-block { margin: 0 0 16px; padding: 12px; border: 1px solid #bdc9c4; border-radius: 8px; break-inside: avoid; page-break-inside: avoid; }
-          .print-event-block + .print-event-block { margin-top: 16px; }
-          .print-event-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 8px; }
-          .print-event-header span { color: #68716d; font-size: 8pt; font-weight: bold; letter-spacing: .08em; text-transform: uppercase; }
-          .print-event-header h2 { margin: 2px 0 0; font-size: 16pt; }
-          .print-description { margin-bottom: 10px; }
-          .print-event-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 12px; }
-          .print-event-meta div { display: flex; gap: 5px; }
-          .print-event-meta dt { font-weight: bold; }
-          .print-event-meta dd { margin: 0; }
-          .print-list-block { margin-top: 10px; padding-top: 10px; border-top: 1px solid #d8dfdc; break-inside: avoid; page-break-inside: avoid; }
-          .print-list-heading { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 7px; }
-          .print-list-heading h3 { margin-bottom: 1px; font-size: 12pt; }
-          .print-list-heading p { margin: 0; color: #68716d; }
-          .print-list-facts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px 10px; font-size: 9pt; }
-          .print-entry-table { margin-top: 7px; font-size: 9pt; }
-          .print-empty { margin: 7px 0 0; color: #68716d; font-style: italic; }
-          @media screen {
-            body { max-width: 210mm; margin: 18px auto; padding: 14mm; box-shadow: 0 0 20px rgba(0,0,0,.12); }
-          }
-          @media print {
-            body { max-width: none; }
-          }
-        </style>
-      </head>
-      <body>${body}
-        <script>
-          window.addEventListener('load', function () {
-            window.setTimeout(function () { window.print(); }, 150);
-          });
-        <\/script>
-      </body>
-    </html>`);
-  printWindow.document.close();
+  const root =
+    document.createElement(
+      'div'
+    );
+
+  root.id =
+    'adminPrintRoot';
+
+  root.className =
+    'admin-print-root';
+
+  root.setAttribute(
+    'aria-hidden',
+    'true'
+  );
+
+  root.innerHTML = body;
+
+  document.body.appendChild(
+    root
+  );
+
+  const previousTitle =
+    document.title;
+
+  document.title = title;
+  document.body.classList.add(
+    'is-admin-printing'
+  );
+
+  let cleaned = false;
+
+  const cleanup = () => {
+    if (cleaned) {
+      return;
+    }
+
+    cleaned = true;
+    document.body.classList.remove(
+      'is-admin-printing'
+    );
+    document.title = previousTitle;
+    root.remove();
+    window.removeEventListener(
+      'afterprint',
+      cleanup
+    );
+  };
+
+  window.addEventListener(
+    'afterprint',
+    cleanup,
+    { once: true }
+  );
+
+  window.requestAnimationFrame(
+    () => {
+      window.requestAnimationFrame(
+        () => {
+          window.print();
+          window.setTimeout(
+            cleanup,
+            1500
+          );
+        }
+      );
+    }
+  );
 }
 
 function renderAdminPointsOverview(
@@ -4115,7 +4206,16 @@ function renderAdminPointsOverview(
           </p>
         </div>
 
-        <label class="filter-field admin-points-sort">
+        <div class="admin-points-header-actions">
+          <button
+            type="button"
+            class="button button-secondary"
+            id="adminPrintPointsButton"
+          >
+            ⎙ Aktuelle Liste drucken
+          </button>
+
+          <label class="filter-field admin-points-sort">
           <span>Sortieren nach</span>
 
           <select id="adminPointsSort">
@@ -4147,7 +4247,8 @@ function renderAdminPointsOverview(
             ${adminSortOption('status-open', 'Offene zuerst')}
             ${adminSortOption('only-open', 'Nur offene')}
           </select>
-        </label>
+          </label>
+        </div>
       </header>
 
       <div class="admin-points-summary">
