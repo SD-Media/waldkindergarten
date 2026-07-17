@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vereinsplattform</title>
+  <script>
+    (function () {
+      var basePath = '/vereinsverwaltung/';
+      var requestedPath = window.location.pathname;
+
+      if (requestedPath.indexOf(basePath) !== 0) {
+        window.location.replace(basePath);
+        return;
+      }
+
+      var target = basePath +
+        '?spa=' + encodeURIComponent(
+          requestedPath + window.location.search + window.location.hash
+        );
+
+      window.location.replace(target);
+    }());
+  </script>
+</head>
+<body>
+  <p>Vereinsplattform wird geöffnet …</p>
+</body>
+</html>
