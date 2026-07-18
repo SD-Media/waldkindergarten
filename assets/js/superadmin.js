@@ -125,6 +125,9 @@ async function renderDashboard_(elements, token) {
         <p>${tenants.length} ${tenants.length === 1 ? 'Einrichtung' : 'Einrichtungen'} registriert</p>
       </div>
       <div class="superadmin-header-actions">
+        <button id="createMessageButton" class="button button-secondary" type="button">
+          Mitteilung verfassen
+        </button>
         <button id="createTenantButton" class="button button-primary" type="button">
           Neue Einrichtung
         </button>
@@ -177,6 +180,15 @@ async function renderDashboard_(elements, token) {
       <div class="superadmin-tenant-list" id="superadminTenantList"></div>
     </section>
 
+    <section class="panel-card superadmin-message-panel">
+      <div class="panel-heading">
+        <div><span class="eyebrow">Kommunikation</span><h2>Gesendete Mitteilungen</h2></div>
+      </div>
+      <div id="superadminMessageList" class="message-history-list">
+        <p class="muted">Mitteilungen werden geladen …</p>
+      </div>
+    </section>
+
     <div id="superadminDialogRoot"></div>
   `;
 
@@ -214,6 +226,12 @@ async function renderDashboard_(elements, token) {
   document
     .getElementById('createTenantButton')
     .addEventListener('click', () => openCreateDialog_(elements, token));
+
+  document
+    .getElementById('createMessageButton')
+    .addEventListener('click', () => openMessageDialog_(elements, token, tenants));
+
+  loadSuperadminMessages_(token);
 
   document
     .getElementById('superadminLogoutButton')
@@ -409,6 +427,55 @@ function openDeleteDialog_(elements, token, tenant) {
       await renderDashboard_(elements, token);
     });
   });
+}
+
+
+function openMessageDialog_(elements, token, tenants) {
+  renderDialog_(`
+    <div class="dialog-header">
+      <div><span class="eyebrow">Postfach</span><h2>Mitteilung verfassen</h2></div>
+      <button class="icon-button" type="button" data-close-dialog>×</button>
+    </div>
+    <form id="createMessageForm" class="dialog-form">
+      <label class="form-field"><span>Empfänger</span><select name="targetTenant">
+        <option value="all">Alle Einrichtungen</option>
+        ${tenants.map(item => `<option value="${escapeHtml_(item.tenant)}">${escapeHtml_(item.name || item.tenant)}</option>`).join('')}
+      </select></label>
+      <label class="form-field"><span>Titel</span><input name="title" maxlength="120" required></label>
+      <label class="form-field"><span>Nachricht</span><textarea name="message" rows="8" maxlength="5000" required placeholder="Neuigkeiten, Hinweise oder Änderungen …"></textarea></label>
+      <div id="superadminFormError" class="form-error" hidden></div>
+      <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Abbrechen</button><button class="button button-primary" type="submit">Mitteilung veröffentlichen</button></div>
+    </form>
+  `);
+
+  document.getElementById('createMessageForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form).entries());
+    await submitDialogAction_(form, async () => {
+      await apiPost('superadmincreatemessage', { data }, token);
+      closeDialog_();
+      await loadSuperadminMessages_(token);
+    });
+  });
+}
+
+async function loadSuperadminMessages_(token) {
+  const root = document.getElementById('superadminMessageList');
+  if (!root) return;
+  try {
+    const messages = await apiPost('superadminmessages', {}, token);
+    root.innerHTML = Array.isArray(messages) && messages.length
+      ? messages.map(item => `
+          <article class="message-history-item">
+            <div><strong>${escapeHtml_(item.title)}</strong><span>${escapeHtml_(item.createdAtText || item.createdAt || '')}</span></div>
+            <p>${escapeHtml_(item.message).replace(/\n/g, '<br>')}</p>
+            <small>Empfänger: ${item.targetTenant === 'all' ? 'Alle Einrichtungen' : escapeHtml_(item.targetTenant)}</small>
+          </article>`).join('')
+      : '<p class="muted">Noch keine Mitteilungen vorhanden.</p>';
+  } catch (error) {
+    root.innerHTML = `<p class="form-error">${escapeHtml_(error.message || 'Mitteilungen konnten nicht geladen werden.')}</p>`;
+  }
 }
 
 function renderDialog_(content) {
