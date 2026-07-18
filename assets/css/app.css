@@ -4499,3 +4499,20 @@ a:focus-visible {
     align-items: flex-start;
   }
 }
+
+
+/* Version 2.5.1 – vergangene Veranstaltungen */
+.event-card.is-past-event {
+  opacity: 0.62;
+  filter: grayscale(0.72);
+  background: var(--color-surface-muted);
+}
+
+.event-card.is-past-event .event-card-header,
+.event-card.is-past-event .event-list-grid {
+  background: transparent;
+}
+
+.event-card.is-past-event:hover {
+  opacity: 0.78;
+}
