@@ -14,37 +14,22 @@ const POPUP_SESSION_PREFIX = 'vereinsverwaltung_message_popup_';
 
 export async function bindAdminMailbox(contentElement) {
   const button = contentElement.querySelector('#adminMailboxButton');
-  const badge = contentElement.querySelector('#adminMailboxBadge');
-
-  if (!button) {
-    return;
-  }
+  if (!button) return;
 
   button.addEventListener('click', () => openMailbox_(contentElement));
 
   try {
     const messages = await loadMessages_();
+    updateMailboxBadge_(contentElement, messages);
     const unread = messages.filter(item => item.read !== true);
-
-    if (badge) {
-      badge.hidden = unread.length === 0;
-      badge.textContent = unread.length > 99 ? '99+' : String(unread.length);
-    }
-
     if (unread.length) {
       const newest = unread[0];
       const popupKey = POPUP_SESSION_PREFIX + String(newest.id || '');
-
       if (!sessionStorage.getItem(popupKey)) {
         sessionStorage.setItem(popupKey, '1');
         showMessageDialog_(contentElement, newest, true);
         await markRead_(newest.id);
-        newest.read = true;
-        if (badge) {
-          const remaining = Math.max(0, unread.length - 1);
-          badge.hidden = remaining === 0;
-          badge.textContent = String(remaining);
-        }
+        await refreshMailboxBadge_(contentElement);
       }
     }
   } catch (error) {
@@ -69,6 +54,12 @@ async function openMailbox_(contentElement) {
 
   try {
     const messages = await loadMessages_();
+    const unreadMessages = messages.filter(item => item.read !== true);
+    if (unreadMessages.length) {
+      await Promise.all(unreadMessages.map(item => markRead_(item.id)));
+      unreadMessages.forEach(item => { item.read = true; });
+    }
+    updateMailboxBadge_(contentElement, messages);
     const card = root.querySelector('.mailbox-dialog-card');
     card.innerHTML = `
       <header class="dialog-header">
@@ -92,6 +83,7 @@ async function openMailbox_(contentElement) {
         if (!message.read) {
           await markRead_(message.id);
           message.read = true;
+          await refreshMailboxBadge_(contentElement);
         }
       });
     });
@@ -155,6 +147,22 @@ async function markRead_(messageId) {
   const token = getStoredToken();
   if (!token || !messageId) return;
   await apiPost('markmessageread', { id: messageId }, token);
+}
+
+function updateMailboxBadge_(contentElement, messages) {
+  const badge = contentElement.querySelector('#adminMailboxBadge');
+  if (!badge) return;
+  const unreadCount = (Array.isArray(messages) ? messages : []).filter(item => item.read !== true).length;
+  badge.hidden = unreadCount === 0;
+  badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+}
+
+async function refreshMailboxBadge_(contentElement) {
+  try {
+    updateMailboxBadge_(contentElement, await loadMessages_());
+  } catch (error) {
+    console.warn('Postfach-Zähler konnte nicht aktualisiert werden.', error);
+  }
 }
 
 function getDialogRoot_(contentElement) {
