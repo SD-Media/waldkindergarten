@@ -475,8 +475,7 @@ async function loadSuperadminMessages_(token) {
               </div>
               <button class="icon-action danger" type="button" title="Mitteilung löschen" aria-label="Mitteilung löschen" data-delete-message="${escapeHtml_(item.id)}">×</button>
             </div>
-            <p>${escapeHtml_(item.message).replace(/
-/g, '<br>')}</p>
+            <p>${escapeHtml_(item.message).replace(/\n/g, '<br>')}</p>
             <small>Empfänger: ${item.targetTenant === 'all' ? 'Alle Einrichtungen' : escapeHtml_(item.targetTenant)}</small>
           </article>`).join('')
       : '<p class="muted">Noch keine Mitteilungen vorhanden.</p>';
