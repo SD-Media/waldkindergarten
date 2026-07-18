@@ -468,11 +468,34 @@ async function loadSuperadminMessages_(token) {
     root.innerHTML = Array.isArray(messages) && messages.length
       ? messages.map(item => `
           <article class="message-history-item">
-            <div><strong>${escapeHtml_(item.title)}</strong><span>${escapeHtml_(item.createdAtText || item.createdAt || '')}</span></div>
-            <p>${escapeHtml_(item.message).replace(/\n/g, '<br>')}</p>
+            <div class="message-history-header">
+              <div>
+                <strong>${escapeHtml_(item.title)}</strong>
+                <span>${escapeHtml_(item.createdAtText || item.createdAt || '')}</span>
+              </div>
+              <button class="icon-action danger" type="button" title="Mitteilung löschen" aria-label="Mitteilung löschen" data-delete-message="${escapeHtml_(item.id)}">×</button>
+            </div>
+            <p>${escapeHtml_(item.message).replace(/
+/g, '<br>')}</p>
             <small>Empfänger: ${item.targetTenant === 'all' ? 'Alle Einrichtungen' : escapeHtml_(item.targetTenant)}</small>
           </article>`).join('')
       : '<p class="muted">Noch keine Mitteilungen vorhanden.</p>';
+
+    root.querySelectorAll('[data-delete-message]').forEach(button => {
+      button.addEventListener('click', async () => {
+        const id = String(button.dataset.deleteMessage || '').trim();
+        if (!id) return;
+        if (!window.confirm('Soll diese Mitteilung wirklich gelöscht werden? Sie verschwindet dann auch aus den Postfächern der Einrichtungen.')) return;
+        button.disabled = true;
+        try {
+          await apiPost('superadmindeletemessage', { id }, token);
+          await loadSuperadminMessages_(token);
+        } catch (error) {
+          window.alert(error.message || 'Die Mitteilung konnte nicht gelöscht werden.');
+          button.disabled = false;
+        }
+      });
+    });
   } catch (error) {
     root.innerHTML = `<p class="form-error">${escapeHtml_(error.message || 'Mitteilungen konnten nicht geladen werden.')}</p>`;
   }
