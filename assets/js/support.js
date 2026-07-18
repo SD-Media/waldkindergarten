@@ -1,190 +1,129 @@
 /**
- * Vereinsverwaltung – Mitteilungen und Postfach
+ * Vereinsverwaltung – Support und Anregungen
  */
 
 import {
   apiPost
 } from './api.js';
 
-import {
-  getStoredToken
-} from './auth.js';
+const SUPPORT_ADDRESS = 'sd-media@t-online.de';
+const CLIENT_ID_KEY = 'vereinsverwaltung_support_client_id';
 
-const POPUP_SESSION_PREFIX = 'vereinsverwaltung_message_popup_';
+export function renderSupportPage(options) {
+  const {
+    contentElement,
+    setPageHeading
+  } = options;
 
-export async function bindAdminMailbox(contentElement) {
-  const button = contentElement.querySelector('#adminMailboxButton');
-  const badge = contentElement.querySelector('#adminMailboxBadge');
+  setPageHeading(
+    'Support & Anregungen',
+    'Hilfe erhalten und Verbesserungsvorschläge übermitteln'
+  );
 
-  if (!button) {
-    return;
-  }
+  contentElement.innerHTML = `
+    <section class="support-layout">
+      <article class="panel-card support-contact-card">
+        <span class="eyebrow">Direkter Kontakt</span>
+        <h2>Support</h2>
+        <p>
+          Bei technischen Problemen oder Fragen zur Vereinsverwaltung
+          erreichst du den Support per E-Mail.
+        </p>
+        <a class="button button-secondary support-email-link" href="mailto:${SUPPORT_ADDRESS}">
+          ${SUPPORT_ADDRESS}
+        </a>
+      </article>
 
-  button.addEventListener('click', () => openMailbox_(contentElement));
+      <article class="panel-card support-feedback-card">
+        <span class="eyebrow">Weiterentwicklung</span>
+        <h2>Anregung oder Tool-Vorschlag senden</h2>
+        <p>
+          Beschreibe, was verbessert werden könnte oder welches neue Tool
+          die Vereinsplattform künftig ergänzen sollte.
+        </p>
 
-  try {
-    const messages = await loadMessages_();
-    const unread = messages.filter(item => item.read !== true);
+        <form id="supportFeedbackForm" class="dialog-form support-feedback-form">
+          <div class="form-grid-two">
+            <label class="form-field">
+              <span>Name <small>optional</small></span>
+              <input name="name" maxlength="120" autocomplete="name">
+            </label>
 
-    if (badge) {
-      badge.hidden = unread.length === 0;
-      badge.textContent = unread.length > 99 ? '99+' : String(unread.length);
-    }
-
-    if (unread.length) {
-      const newest = unread[0];
-      const popupKey = POPUP_SESSION_PREFIX + String(newest.id || '');
-
-      if (!sessionStorage.getItem(popupKey)) {
-        sessionStorage.setItem(popupKey, '1');
-        showMessageDialog_(contentElement, newest, true);
-        await markRead_(newest.id);
-        newest.read = true;
-        if (badge) {
-          const remaining = Math.max(0, unread.length - 1);
-          badge.hidden = remaining === 0;
-          badge.textContent = String(remaining);
-        }
-      }
-    }
-  } catch (error) {
-    console.warn('Postfach konnte nicht geladen werden.', error);
-  }
-}
-
-async function openMailbox_(contentElement) {
-  const root = getDialogRoot_(contentElement);
-  root.innerHTML = `
-    <div class="dialog-backdrop">
-      <section class="dialog-card mailbox-dialog-card" role="dialog" aria-modal="true" aria-labelledby="mailboxTitle">
-        <header class="dialog-header">
-          <div><span class="eyebrow">Mitteilungen</span><h2 id="mailboxTitle">Postfach</h2></div>
-          <button class="icon-button" type="button" data-close-mailbox>×</button>
-        </header>
-        <div class="mailbox-loading">Mitteilungen werden geladen …</div>
-      </section>
-    </div>`;
-
-  bindClose_(root);
-
-  try {
-    const messages = await loadMessages_();
-    const card = root.querySelector('.mailbox-dialog-card');
-    card.innerHTML = `
-      <header class="dialog-header">
-        <div><span class="eyebrow">Mitteilungen</span><h2 id="mailboxTitle">Postfach</h2></div>
-        <button class="icon-button" type="button" data-close-mailbox>×</button>
-      </header>
-      <div class="mailbox-list">
-        ${messages.length
-          ? messages.map(renderMailboxItem_).join('')
-          : '<div class="admin-empty-note">Noch keine Mitteilungen vorhanden.</div>'}
-      </div>
-      <div class="dialog-actions"><button class="button button-primary" type="button" data-close-mailbox>Schließen</button></div>`;
-
-    bindClose_(root);
-
-    root.querySelectorAll('[data-open-message]').forEach(button => {
-      button.addEventListener('click', async () => {
-        const message = messages.find(item => String(item.id) === button.dataset.openMessage);
-        if (!message) return;
-        showMessageDialog_(contentElement, message, false);
-        if (!message.read) {
-          await markRead_(message.id);
-          message.read = true;
-        }
-      });
-    });
-  } catch (error) {
-    const loading = root.querySelector('.mailbox-loading');
-    if (loading) {
-      loading.className = 'form-error';
-      loading.textContent = error.message || 'Mitteilungen konnten nicht geladen werden.';
-    }
-  }
-}
-
-function showMessageDialog_(contentElement, message, isNew) {
-  const root = getDialogRoot_(contentElement);
-  root.innerHTML = `
-    <div class="dialog-backdrop">
-      <section class="dialog-card mailbox-message-card" role="dialog" aria-modal="true" aria-labelledby="messageDialogTitle">
-        <header class="dialog-header">
-          <div>
-            <span class="eyebrow">${isNew ? 'Neue Mitteilung' : 'Postfach'}</span>
-            <h2 id="messageDialogTitle">${escapeHtml_(message.title)}</h2>
+            <label class="form-field">
+              <span>E-Mail für Rückfragen <small>optional</small></span>
+              <input name="email" type="email" maxlength="180" autocomplete="email">
+            </label>
           </div>
-          <button class="icon-button" type="button" data-close-mailbox>×</button>
-        </header>
-        <div class="mailbox-message-date">${escapeHtml_(message.createdAtText || message.createdAt || '')}</div>
-        <div class="mailbox-message-body">${escapeHtml_(message.message).replace(/\n/g, '<br>')}</div>
-        <div class="dialog-actions">
-          <button class="button button-secondary" type="button" data-open-full-mailbox>Zum Postfach</button>
-          <button class="button button-primary" type="button" data-close-mailbox>Schließen</button>
-        </div>
-      </section>
-    </div>`;
 
-  bindClose_(root);
-  const mailboxButton = root.querySelector('[data-open-full-mailbox]');
-  if (mailboxButton) {
-    mailboxButton.addEventListener('click', () => openMailbox_(contentElement));
-  }
-}
+          <label class="form-field">
+            <span>Betreff</span>
+            <input name="subject" maxlength="140" required placeholder="Zum Beispiel: Verbesserung der Listenansicht">
+          </label>
 
-function renderMailboxItem_(message) {
-  return `
-    <button class="mailbox-list-item ${message.read ? '' : 'is-unread'}" type="button" data-open-message="${escapeHtml_(message.id)}">
-      <span class="mailbox-list-marker" aria-hidden="true"></span>
-      <span class="mailbox-list-content">
-        <strong>${escapeHtml_(message.title)}</strong>
-        <span>${escapeHtml_(message.createdAtText || message.createdAt || '')}</span>
-        <small>${escapeHtml_(truncate_(message.message, 130))}</small>
-      </span>
-    </button>`;
-}
+          <label class="form-field">
+            <span>Anregung</span>
+            <textarea name="message" rows="9" minlength="10" maxlength="5000" required placeholder="Beschreibe deinen Vorschlag möglichst konkret …"></textarea>
+          </label>
 
-async function loadMessages_() {
-  const token = getStoredToken();
-  if (!token) return [];
-  const result = await apiPost('messages', {}, token);
-  return Array.isArray(result) ? result : [];
-}
+          <label class="support-honeypot" aria-hidden="true">
+            <span>Website</span>
+            <input name="website" tabindex="-1" autocomplete="off">
+          </label>
 
-async function markRead_(messageId) {
-  const token = getStoredToken();
-  if (!token || !messageId) return;
-  await apiPost('markmessageread', { id: messageId }, token);
-}
+          <div id="supportFeedbackMessage" class="form-error" hidden></div>
 
-function getDialogRoot_(contentElement) {
-  let root = contentElement.querySelector('#adminDialogRoot');
-  if (!root) {
-    root = document.createElement('div');
-    root.id = 'adminDialogRoot';
-    contentElement.appendChild(root);
-  }
-  return root;
-}
+          <div class="dialog-actions support-form-actions">
+            <button class="button button-primary" type="submit">
+              Anregung absenden
+            </button>
+          </div>
+        </form>
+      </article>
+    </section>
+  `;
 
-function bindClose_(root) {
-  root.querySelectorAll('[data-close-mailbox]').forEach(button => {
-    button.addEventListener('click', () => {
-      root.innerHTML = '';
-    });
+  const form = contentElement.querySelector('#supportFeedbackForm');
+  const messageBox = contentElement.querySelector('#supportFeedbackMessage');
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const button = form.querySelector('button[type="submit"]');
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.clientId = getSupportClientId_();
+
+    button.disabled = true;
+    button.textContent = 'Wird gesendet …';
+    messageBox.hidden = true;
+    messageBox.classList.remove('is-success');
+
+    try {
+      const result = await apiPost('submitsupport', { data });
+      form.reset();
+      messageBox.textContent = result && result.message
+        ? result.message
+        : 'Vielen Dank. Deine Anregung wurde übermittelt.';
+      messageBox.classList.add('is-success');
+      messageBox.hidden = false;
+    } catch (error) {
+      messageBox.textContent = error && error.message
+        ? error.message
+        : 'Die Anregung konnte nicht gesendet werden.';
+      messageBox.hidden = false;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Anregung absenden';
+    }
   });
 }
 
-function truncate_(value, maxLength) {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  return text.length > maxLength ? text.slice(0, maxLength - 1) + '…' : text;
-}
+function getSupportClientId_() {
+  let value = String(localStorage.getItem(CLIENT_ID_KEY) || '').trim();
 
-function escapeHtml_(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  if (!value) {
+    value = 'client_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 12);
+    localStorage.setItem(CLIENT_ID_KEY, value);
+  }
+
+  return value;
 }
