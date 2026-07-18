@@ -4,7 +4,7 @@
 
 export const APP_CONFIG = Object.freeze({
   appName: 'Vereinsplattform',
-  version: '2.3.0',
+  version: '2.4.0',
   basePath: '/vereinsverwaltung/',
   apiUrl:
     'https://script.google.com/macros/s/AKfycbx0a5cuj_fOSzA4HyLlilb1u7C4xZWdUj_KKL3liKgXIXrObYDKeNRak4pz1l7HC_eS/exec',
