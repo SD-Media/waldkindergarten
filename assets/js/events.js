@@ -308,7 +308,7 @@ function renderEvent(
     );
 
   return `
-    <article class="event-card">
+    <article class="event-card${isPastEvent(event) ? ' is-past-event' : ''}">
       <header class="event-card-header">
         ${renderDateBadge(
           date,
@@ -1297,14 +1297,67 @@ function parseGermanDate(value) {
 }
 
 function compareEvents(a, b) {
-  return (
+  const aPast =
+    isPastEvent(a);
+
+  const bPast =
+    isPastEvent(b);
+
+  if (aPast !== bPast) {
+    return aPast
+      ? 1
+      : -1;
+  }
+
+  const difference =
     dateSortValue(
       a.startdatum
     ) -
     dateSortValue(
       b.startdatum
-    )
+    );
+
+  /*
+   * Zukünftige Veranstaltungen: nächste zuerst.
+   * Vergangene Veranstaltungen: zuletzt vergangene zuerst.
+   */
+  return aPast
+    ? -difference
+    : difference;
+}
+
+function isPastEvent(event) {
+  const relevantDate =
+    event && event.enddatum
+      ? event.enddatum
+      : event && event.startdatum
+        ? event.startdatum
+        : '';
+
+  const timestamp =
+    dateSortValue(
+      relevantDate
+    );
+
+  if (
+    timestamp ===
+    Number.MAX_SAFE_INTEGER
+  ) {
+    return false;
+  }
+
+  const today =
+    new Date();
+
+  today.setHours(
+    0,
+    0,
+    0,
+    0
   );
+
+  return timestamp <
+    today.getTime();
 }
 
 function compareLists(a, b) {
