@@ -108,8 +108,10 @@ function showMessageDialog_(contentElement, message, isNew) {
           </div>
           <button class="icon-button" type="button" data-close-mailbox>×</button>
         </header>
-        <div class="mailbox-message-date">${escapeHtml_(message.createdAtText || message.createdAt || '')}</div>
-        <div class="mailbox-message-body">${escapeHtml_(message.message).replace(/\n/g, '<br>')}</div>
+        <div class="mailbox-message-content">
+          <div class="mailbox-message-date">${escapeHtml_(message.createdAtText || message.createdAt || '')}</div>
+          <div class="mailbox-message-body">${escapeHtml_(message.message).replace(/\n/g, '<br>')}</div>
+        </div>
         <div class="dialog-actions">
           <button class="button button-secondary" type="button" data-open-full-mailbox>Zum Postfach</button>
           <button class="button button-primary" type="button" data-close-mailbox>Schließen</button>
