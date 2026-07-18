@@ -50,6 +50,10 @@ import {
 } from './archive.js';
 
 import {
+  renderSupportPage
+} from './support.js?v=2.4.0';
+
+import {
   validateSession
 } from './auth.js';
 
@@ -279,11 +283,27 @@ function registerRoutes() {
   );
 
   registerRoute(
-    'overview',
+    'events',
     () =>
       renderOverviewPage({
         contentElement:
           elements.content,
+        setPageHeading
+      })
+  );
+
+  registerRoute(
+    'overview',
+    () => {
+      navigate('events');
+    }
+  );
+
+  registerRoute(
+    'support',
+    () =>
+      renderSupportPage({
+        contentElement: elements.content,
         setPageHeading
       })
   );
@@ -334,11 +354,21 @@ async function renderCurrentPage() {
     getCurrentRoute();
 
   if (
+    route === 'events' ||
     route === 'overview'
   ) {
     return renderOverviewPage({
       contentElement:
         elements.content,
+      setPageHeading
+    });
+  }
+
+  if (
+    route === 'support'
+  ) {
+    return renderSupportPage({
+      contentElement: elements.content,
       setPageHeading
     });
   }
@@ -811,11 +841,11 @@ function bindGlobalUtilityButtons_() {
   }
 
   if (elements.tenantShareButton) {
-    elements.tenantShareButton.addEventListener('click', shareTenantPage_);
+    elements.tenantShareButton.addEventListener('click', async () => { closeMobileNavigation(); await shareTenantPage_(); });
   }
 
   if (elements.tenantQrButton) {
-    elements.tenantQrButton.addEventListener('click', showTenantQrCode_);
+    elements.tenantQrButton.addEventListener('click', () => { closeMobileNavigation(); showTenantQrCode_(); });
   }
 }
 
