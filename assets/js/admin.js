@@ -21,7 +21,7 @@ import {
 
 import {
   bindAdminMailbox
-} from './messages.js?v=2.4.0';
+} from './messages.js?v=2.4.2';
 
 import {
   getStoreSnapshot,
